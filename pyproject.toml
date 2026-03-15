@@ -4,14 +4,17 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "banxico-connectors"
-version = "0.1.0"
+version = "0.1.3"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["mainsequence"]
+dependencies = [
+    "mainsequence",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["src*", "agents*"]
+include = ["banxico_connectors*"]
+
 
 [tool.ruff]
 line-length = 100                 # Max line length for Ruff/Black.
@@ -62,6 +65,4 @@ ignore = ["E203", "E501"]
 
 [tool.ruff.lint.isort]
 # Treat these as your own packages so they sort as "first-party".
-known-first-party = ["mainsequence","src","agents"]
-# (If you use a src/ layout, also set: src-paths = ["src"])
-src-paths = ["src", "agents"]
+known-first-party = ["mainsequence","banxico_connectors",]
