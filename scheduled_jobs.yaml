@@ -1,0 +1,10 @@
+jobs:
+  - name: "Banxico Curves Refresh"
+    execution_path: "scripts/build_curves.py"
+    task_schedule:
+      type: "crontab"
+      expression: "0 0 * * *"
+    related_image_id: 1
+    cpu_request: "0.25"
+    memory_request: "0.5"
+    max_runtime_seconds: 3600

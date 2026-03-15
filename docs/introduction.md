@@ -13,8 +13,8 @@ MainSequence pricing models and dashboards.
 - Registers Banxico-specific market assets and MainSequence constants.
 - Builds MainSequence fixing datasets for TIIE and CETE reference rates.
 - Builds a MainSequence discount curve from Banxico on-the-run instruments.
-- Includes a Streamlit dashboard scaffold that uses the MainSequence dashboard
-  runtime.
+- Includes a multipage Streamlit dashboard that reads the source, fixing, and
+  curve tables through the MainSequence dashboard runtime.
 
 ## MainSequence Alignment
 
@@ -28,12 +28,28 @@ The project follows MainSequence concepts directly:
 - A Streamlit dashboard uses the MainSequence dashboard scaffold instead of a
   standalone app shell.
 
+## Operational Note
+
+The repository and the deployed platform state can drift. Use the checks in
+[Deployment And CLI](deployment.md) to confirm whether the current remote head
+has project resources, images, jobs, and DataNode update history.
+
+## What The Project Does Not Create
+
+This repository does not currently create:
+
+- portfolios
+- asset translation tables
+- a broader production Banxico analytics application beyond the current
+  monitoring dashboard
+
 ## Main Entry Points
 
 - `scripts/build_curves.py` runs the end-to-end workflow.
-- `banxico_connectors/data_nodes/nodes.py` defines the Banxico source node.
+- `banxico_connectors/data_nodes/banxico_mx_otr.py` defines the Banxico source
+  node.
 - `banxico_connectors/instruments/registry.py` wires the connector into
   MainSequence registries.
 - `banxico_connectors/instruments/rates_to_curves.py` contains the Banxico
   fixing and curve-building logic.
-- `dashboards/sample_app/app.py` is the current dashboard entry point.
+- `dashboards/banxico_rates_monitor/app.py` is the current dashboard entry point.

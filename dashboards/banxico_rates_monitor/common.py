@@ -1,0 +1,295 @@
+"""Shared data-access helpers for the Banxico rates monitor dashboard."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+import pandas as pd
+import pytz
+import streamlit as st
+import mainsequence.client as msc
+
+from mainsequence.tdag import APIDataNode
+from mainsequence.instruments.interest_rates.etl.curve_codec import (
+    decompress_string_to_curve,
+)
+
+from banxico_connectors.settings import ON_THE_RUN_DATA_NODE_TABLE_NAME
+
+UTC = pytz.UTC
+FIXINGS_TABLE_IDENTIFIER = "fixing_rates_1d"
+CURVES_TABLE_IDENTIFIER = "discount_curves"
+DEFAULT_LOOKBACK_DAYS = 180
+
+
+@dataclass(frozen=True)
+class TableBinding:
+    identifier: str
+    title: str
+    description: str
+    storage: msc.DataNodeStorage | None
+    node: APIDataNode | None
+    error: str | None = None
+
+    @property
+    def available(self) -> bool:
+        return self.storage is not None and self.node is not None and self.error is None
+
+def _utc_now() -> pd.Timestamp:
+    return pd.Timestamp.now(tz=UTC)
+
+
+def default_start_date(days: int = DEFAULT_LOOKBACK_DAYS) -> pd.Timestamp:
+    return (_utc_now() - pd.Timedelta(days=days)).normalize()
+
+
+def storage_data_source_id(storage: msc.DataNodeStorage) -> int:
+    data_source = storage.data_source
+    return data_source.id if hasattr(data_source, "id") else int(data_source)
+
+
+@st.cache_resource(show_spinner=False)
+def get_table_binding(identifier: str, title: str, description: str) -> TableBinding:
+    try:
+        storage = msc.DataNodeStorage.get(identifier=identifier)
+        node = APIDataNode(
+            data_source_id=storage_data_source_id(storage),
+            storage_hash=storage.storage_hash,
+        )
+        return TableBinding(
+            identifier=identifier,
+            title=title,
+            description=description,
+            storage=storage,
+            node=node,
+        )
+    except Exception as exc:
+        return TableBinding(
+            identifier=identifier,
+            title=title,
+            description=description,
+            storage=None,
+            node=None,
+            error=str(exc),
+        )
+
+
+def get_bindings() -> dict[str, TableBinding]:
+    return {
+        "source": get_table_binding(
+            ON_THE_RUN_DATA_NODE_TABLE_NAME,
+            "Banxico Source Node",
+            "On-the-run Banxico market observations used as the source layer for fixings and curve construction.",
+        ),
+        "fixings": get_table_binding(
+            FIXINGS_TABLE_IDENTIFIER,
+            "Fixing Rates Node",
+            "Daily decimal fixings published by MainSequence for TIIE and CETE reference rates.",
+        ),
+        "curves": get_table_binding(
+            CURVES_TABLE_IDENTIFIER,
+            "Discount Curves Node",
+            "Compressed zero-curve payloads built by MainSequence discount-curve ETL.",
+        ),
+    }
+
+
+@st.cache_data(show_spinner=False, ttl=120)
+def fetch_table_df(
+    identifier: str,
+    start_date: pd.Timestamp | None = None,
+    end_date: pd.Timestamp | None = None,
+    unique_identifier_list: list[str] | None = None,
+    columns: list[str] | None = None,
+) -> pd.DataFrame:
+    bindings = get_bindings()
+    binding = next((b for b in bindings.values() if b.identifier == identifier), None)
+    if binding is None or not binding.available or binding.node is None:
+        return pd.DataFrame()
+
+    start = start_date.to_pydatetime() if isinstance(start_date, pd.Timestamp) else start_date
+    end = end_date.to_pydatetime() if isinstance(end_date, pd.Timestamp) else end_date
+
+    try:
+        return binding.node.get_df_between_dates(
+            start_date=start,
+            end_date=end,
+            unique_identifier_list=unique_identifier_list,
+            columns=columns,
+        )
+    except Exception:
+        return pd.DataFrame()
+
+
+def normalize_frame(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    out = df.copy()
+    if isinstance(out.index, pd.MultiIndex):
+        out = out.reset_index()
+    else:
+        out = out.reset_index(names=["time_index"])
+    if "time_index" in out.columns:
+        out["time_index"] = pd.to_datetime(out["time_index"], utc=True, errors="coerce")
+    return out
+
+
+def enrich_source_frame(df: pd.DataFrame) -> pd.DataFrame:
+    flat = normalize_frame(df)
+    if flat.empty:
+        return flat
+
+    uid_series = flat["unique_identifier"].astype(str) if "unique_identifier" in flat.columns else pd.Series("", index=flat.index)
+
+    if "type" not in flat.columns:
+        flat["type"] = "unknown"
+        flat.loc[uid_series.str.startswith("MCET_"), "type"] = "zero_coupon"
+        flat.loc[uid_series.str.startswith("MBONO_"), "type"] = "fixed_bond"
+        flat.loc[uid_series.str.startswith("BONDES_D_"), "type"] = "floating_bondes_d"
+        flat.loc[uid_series.str.startswith("BONDES_F_"), "type"] = "floating_bondes_f"
+        flat.loc[uid_series.str.startswith("BONDES_G_"), "type"] = "floating_bondes_g"
+        flat.loc[uid_series.eq("BANXICO_TARGET_RATE"), "type"] = "overnight_rate"
+
+    if "instrument_family" not in flat.columns:
+        flat["instrument_family"] = "unknown"
+        flat.loc[uid_series.str.startswith("MCET_"), "instrument_family"] = "cetes"
+        flat.loc[uid_series.str.startswith("MBONO_"), "instrument_family"] = "bonos"
+        flat.loc[uid_series.str.startswith("BONDES_D_"), "instrument_family"] = "bondes_d"
+        flat.loc[uid_series.str.startswith("BONDES_F_"), "instrument_family"] = "bondes_f"
+        flat.loc[uid_series.str.startswith("BONDES_G_"), "instrument_family"] = "bondes_g"
+        flat.loc[uid_series.eq("BANXICO_TARGET_RATE"), "instrument_family"] = "banxico_target_rate"
+
+    if "quote_type" not in flat.columns:
+        flat["quote_type"] = "price"
+        flat.loc[uid_series.eq("BANXICO_TARGET_RATE"), "quote_type"] = "rate"
+
+    if "coupon_type" not in flat.columns:
+        flat["coupon_type"] = "none"
+        flat.loc[flat["type"].eq("fixed_bond"), "coupon_type"] = "coupon"
+        flat.loc[
+            flat["type"].isin(["floating_bondes_d", "floating_bondes_f", "floating_bondes_g"]),
+            "coupon_type",
+        ] = "spread_like_rate"
+
+    return flat
+
+
+def latest_rows(df: pd.DataFrame) -> pd.DataFrame:
+    flat = normalize_frame(df)
+    if flat.empty or "time_index" not in flat.columns:
+        return flat
+    latest = flat["time_index"].max()
+    return flat[flat["time_index"] == latest].copy()
+
+
+def available_identifiers(df: pd.DataFrame) -> list[str]:
+    flat = normalize_frame(df)
+    if flat.empty or "unique_identifier" not in flat.columns:
+        return []
+    return sorted(flat["unique_identifier"].dropna().astype(str).unique().tolist())
+
+
+def source_metric_options(df: pd.DataFrame) -> list[str]:
+    flat = normalize_frame(df)
+    preferred = [
+        "dirty_price",
+        "clean_price",
+        "current_coupon",
+        "days_to_maturity",
+    ]
+    return [col for col in preferred if col in flat.columns]
+
+
+@st.cache_data(show_spinner=False, ttl=120)
+def fetch_assets(unique_identifiers: tuple[str, ...]) -> list[Any]:
+    if not unique_identifiers:
+        return []
+    try:
+        return list(msc.Asset.query(unique_identifier__in=list(unique_identifiers)))
+    except Exception:
+        return []
+
+
+def build_asset_frame(unique_identifiers: list[str]) -> pd.DataFrame:
+    assets = fetch_assets(tuple(unique_identifiers))
+    if not assets:
+        return pd.DataFrame(columns=["unique_identifier", "name", "ticker", "exchange_code"])
+    rows: list[dict[str, Any]] = []
+    for asset in assets:
+        snapshot = getattr(asset, "snapshot", None) or {}
+        rows.append(
+            {
+                "unique_identifier": getattr(asset, "unique_identifier", None),
+                "name": snapshot.get("name"),
+                "ticker": getattr(asset, "ticker", None) or snapshot.get("ticker"),
+                "exchange_code": snapshot.get("exchange_code"),
+            }
+        )
+    return pd.DataFrame(rows).sort_values("unique_identifier")
+
+
+def decode_curve_frame(df: pd.DataFrame) -> pd.DataFrame:
+    flat = normalize_frame(df)
+    if flat.empty or "curve" not in flat.columns:
+        return pd.DataFrame(columns=["time_index", "unique_identifier", "days_to_maturity", "zero_rate"])
+
+    rows: list[dict[str, Any]] = []
+    for row in flat.itertuples(index=False):
+        try:
+            curve_dict = decompress_string_to_curve(getattr(row, "curve"))
+        except Exception:
+            continue
+        for tenor, zero_rate in sorted(curve_dict.items(), key=lambda item: float(item[0])):
+            rows.append(
+                {
+                    "time_index": getattr(row, "time_index"),
+                    "unique_identifier": getattr(row, "unique_identifier"),
+                    "days_to_maturity": float(tenor),
+                    "zero_rate": float(zero_rate),
+                }
+            )
+    if not rows:
+        return pd.DataFrame(columns=["time_index", "unique_identifier", "days_to_maturity", "zero_rate"])
+    out = pd.DataFrame(rows)
+    out["time_index"] = pd.to_datetime(out["time_index"], utc=True, errors="coerce")
+    return out.sort_values(["time_index", "unique_identifier", "days_to_maturity"])
+
+
+def availability_summary(binding: TableBinding, df: pd.DataFrame) -> dict[str, str]:
+    if not binding.available:
+        return {
+            "status": "Unavailable",
+            "latest_time_index": "-",
+            "rows": "0",
+            "identifiers": "0",
+        }
+    flat = normalize_frame(df)
+    latest = "-"
+    identifiers = 0
+    if not flat.empty and "time_index" in flat.columns:
+        latest_ts = flat["time_index"].max()
+        latest = latest_ts.strftime("%Y-%m-%d") if pd.notna(latest_ts) else "-"
+    if not flat.empty and "unique_identifier" in flat.columns:
+        identifiers = flat["unique_identifier"].nunique()
+    return {
+        "status": "Available" if not flat.empty else "Empty",
+        "latest_time_index": latest,
+        "rows": f"{len(flat):,}",
+        "identifiers": f"{identifiers:,}",
+    }
+
+
+def render_binding_alert(binding: TableBinding) -> None:
+    if binding.available:
+        return
+    st.warning(
+        f"{binding.title} is not currently available from the backend. "
+        f"Identifier: `{binding.identifier}`. "
+        f"{binding.error or 'No storage binding could be resolved.'}"
+    )
+
+
+def date_window_label(start: pd.Timestamp, end: pd.Timestamp | None) -> str:
+    end_label = (end or _utc_now()).strftime("%Y-%m-%d")
+    return f"{start.strftime('%Y-%m-%d')} to {end_label}"

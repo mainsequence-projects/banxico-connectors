@@ -63,3 +63,11 @@ When `scripts/build_curves.py` runs, it creates or refreshes:
 The current repository does not create MainSequence portfolios, positions, or
 strategy containers. Its scope is market-data ingestion, fixing publication,
 and curve construction.
+
+## Other Market Objects Not Created
+
+The current repository also does not create:
+
+- asset translation tables
+- portfolio groups
+- virtual-fund workflows

@@ -4,7 +4,7 @@
 
 The repository currently defines one source DataNode:
 
-- `BanxicoMXNOTR` in `banxico_connectors/data_nodes/nodes.py`
+- `BanxicoMXNOTR` in `banxico_connectors/data_nodes/banxico_mx_otr.py`
 
 This node pulls Banxico SIE time series for on-the-run Mexican government
 instruments and normalizes them into the table identified as
@@ -23,11 +23,14 @@ The core fields are:
 | --- | --- |
 | `days_to_maturity` | Days remaining to maturity for the instrument bucket |
 | `clean_price` | Clean price reported by Banxico |
-| `dirty_price` | Dirty price reported by Banxico |
-| `current_coupon` | Current coupon or spread-like field reported by Banxico |
+| `dirty_price` | Dirty price for bonds, or decimal overnight rate when `quote_type=rate` |
+| `current_coupon` | Coupon or spread-like field reported by Banxico |
+| `type` | Normalized instrument role used by the curve bootstrapper |
+| `instrument_family` | Normalized Banxico family name |
+| `quote_type` | Whether `dirty_price` should be read as `price` or `rate` |
+| `coupon_type` | Whether `current_coupon` is unused, coupon-based, or spread-like |
 
-The implementation also appends a `type` column used by the downstream curve
-bootstrapper. The main values are:
+The normalized `type` values are:
 
 - `zero_coupon` for CETES
 - `fixed_bond` for M Bonos
@@ -35,6 +38,13 @@ bootstrapper. The main values are:
 - `floating_bondes_f` for Bondes F
 - `floating_bondes_g` for Bondes G
 - `overnight_rate` for the Banxico target rate anchor
+
+The helper semantic fields are:
+
+- `instrument_family`: `cetes`, `bonos`, `bondes_d`, `bondes_f`, `bondes_g`,
+  or `banxico_target_rate`
+- `quote_type`: `price` or `rate`
+- `coupon_type`: `none`, `coupon`, or `spread_like_rate`
 
 ## Instrument Families Covered
 
@@ -61,3 +71,7 @@ The node fetches Banxico series for these groups:
 
 The node declares no upstream dependencies and acts as the source market-data
 layer for the rest of the project.
+
+If the backend shows no DataNode updates yet, that does not mean the repository
+is missing the node. It means the project has not completed a successful remote
+run for the current deployed state. See [Deployment And CLI](deployment.md).

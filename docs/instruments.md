@@ -81,3 +81,34 @@ These specs use Mexican market conventions through QuantLib where available:
 - One settlement day
 - `ModifiedFollowing` for TIIE tenors
 - `Following` for CETE tenors
+
+## Pricing Runtime Prerequisites
+
+MainSequence pricing still needs the platform-side storage contracts and
+configuration described in the SDK docs.
+
+The important prerequisites are:
+
+- discount curves are stored through the `discount_curves` storage node
+- fixings are stored through the `fixing_rates_1d` storage node
+- platform instrument configuration must point pricing to those storage nodes
+- ETL registration and pricing registration must both be present before runtime
+  pricing can succeed
+
+In practice, this means the repository alone is not enough. A healthy platform
+state also needs:
+
+- successful ETL runs for the Banxico source node, fixings, and zero curve
+- current project resources for the remote head
+- an instrument configuration that can resolve the stored curve and fixing data
+
+## Storage Contract Notes
+
+The connector owns Banxico-specific builders and index specifications, but the
+runtime storage contracts remain the MainSequence ones:
+
+- discount curves are consumed from `discount_curves`
+- reference-rate fixings are consumed from `fixing_rates_1d`
+
+Document and verify those platform settings whenever pricing fails even though
+the repository code looks correct.

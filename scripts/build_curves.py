@@ -28,7 +28,7 @@ from mainsequence.instruments.interest_rates.etl.nodes import (
     RateConfig,
 )
 
-from banxico_connectors.data_nodes.nodes import BanxicoMXNOTR
+from banxico_connectors.data_nodes.banxico_mx_otr import BanxicoMXNOTR
 from banxico_connectors.settings import ON_THE_RUN_DATA_NODE_TABLE_NAME
 
 
