@@ -51,6 +51,18 @@
   - the remote run entered local-mode behavior and failed during node startup
   - the repo has now been patched so the three node runs no longer force
     `debug_mode=True`
+- Built follow-up images and revalidated the runtime in the platform:
+  - image `25` for commit `dc47c4c`
+  - image `26` for commit `4513d5c`
+  - ETL job `431` now points at image `26`
+  - ETL run `1332` reached `BanxicoMXNOTR.update()` and failed with an explicit
+    runtime message:
+    `BANXICO_TOKEN environment variable is required for Banxico SIE access.`
+- Fixed the Streamlit `use_container_width` deprecation in the dashboard code:
+  - replaced `use_container_width=True` with `width="stretch"` in the
+    Banxico dashboard pages
+  - built image `27` for commit `632ed4a`
+  - recreated the dashboard job as job `432` on image `27`
 
 ## Failed
 
@@ -73,6 +85,9 @@
 - `mainsequence project data-node-updates list 138 --timeout 60`
   still does not show Banxico rebuild activity, which is expected because the
   Banxico tables were deleted and the ETL rebuild has not succeeded yet.
+- Dashboard run `1333` for job `432` has been requested but is still `PENDING`,
+  so the warning fix has been deployed but not yet observed through a fresh
+  running dashboard session.
 
 ## Failed Due to Possible MainSequence Issue
 
@@ -102,10 +117,15 @@
 
 - Push the `scripts/build_curves.py` runner fix, build a new project image, and
   move the ETL job to that image.
-- Rerun the Banxico ETL and verify the three deleted tables are recreated
-  without future-dated history.
-- Confirm whether the next ETL blocker is a missing Banxico runtime secret or
-  something else after the `debug_mode` fix is deployed.
+- Provide the Banxico runtime secret in the project job environment and rerun
+  the ETL. The current blocker is now confirmed, not inferred:
+  `BANXICO_TOKEN` is missing in the remote runtime.
+- Rerun the Banxico ETL after the secret is available and verify the three
+  deleted tables are recreated without future-dated history.
+- Let dashboard job `432` leave the queue and verify one clean run on image
+  `27` so the Streamlit warning fix is observed in live logs as well.
+- Implement CLI support for setting up and controlling instrument
+  configuration for the Banxico connector mappings and curve workflow.
 - Restore backend resource indexing so project `138` exposes its current
   dashboard resources.
 - Investigate the `schedule_batch_jobs` strict-sync failure.
@@ -132,5 +152,12 @@
 - `schedule_batch_jobs --strict`:
   - still failing
 - remote ETL execution:
-  - first clean test run failed
-  - repo-side runner fix is prepared but not yet deployed in a new image
+  - first clean test run failed due to forced local debug mode
+  - runner fix was deployed successfully
+  - final validation now shows the remaining blocker is missing
+    `BANXICO_TOKEN` in the remote runtime
+- Streamlit `use_container_width` deprecation:
+  - repo fix implemented
+  - dashboard image `27` created
+  - fresh dashboard job `432` created
+  - live run verification is still pending because run `1333` remains queued

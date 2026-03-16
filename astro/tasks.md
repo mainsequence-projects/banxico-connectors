@@ -1,16 +1,18 @@
 # Astro Tasks
 
-- Build and register a new project image from the commit that removes
-  `debug_mode=True` from `scripts/build_curves.py`.
-- Repoint or recreate the Banxico ETL job so it uses the new image instead of
-  image `24`.
-- Rerun the Banxico ETL and verify that:
+- Provide `BANXICO_TOKEN` to the remote project job environment, then rerun
+  ETL job `431`.
+- Verify after the next successful ETL run that:
   - `banxico_1d_otr_mxn` is recreated
   - `fixing_rates_1d` is recreated
   - `discount_curves` is recreated
   - no `time_index` values are greater than the current date
-- Verify whether the runtime has a valid Banxico secret after the runner fix is
-  deployed. If not, document the missing secret explicitly as the next blocker.
+- Let dashboard job `432` complete on image `27` and verify that the old
+  Streamlit `use_container_width` deprecation warning no longer appears in the
+  run logs.
+- Implement CLI support for setting up and controlling instrument
+  configuration in this project, including the mapped MainSequence instrument
+  definitions used by the Banxico curves workflow.
 - Investigate why
   `mainsequence project schedule_batch_jobs scheduled_jobs.yaml 138 --path . --strict`
   fails with `{"project_id":["This field is required."]}`.
