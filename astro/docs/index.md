@@ -1,7 +1,18 @@
 # Astro Documentation
 
-This folder is the MkDocs-compatible documentation root required by
-`astro/instructions.md`.
+This folder is the Astro-facing documentation root for project `138`.
 
-The formal project documentation has not yet been migrated here completely.
-That migration remains an open task and is tracked in `astro/tasks.md`.
+Current project status is tracked in:
+
+- `astro/journal.md` for validated history, failures, and platform findings
+- `astro/tasks.md` for the remaining operational work
+
+Formal project documentation remains under the repository `docs/` folder:
+
+- `docs/index.md`
+- `docs/introduction.md`
+- `docs/deployment.md`
+- `docs/data-nodes.md`
+- `docs/markets.md`
+- `docs/instruments.md`
+- `docs/dashboards.md`

@@ -69,7 +69,7 @@ def main() -> None:
     _assert_registry_wired()
 
     # ---- Refresh Banxico OTR points ----
-    BanxicoMXNOTR().run(debug_mode=True, force_update=True)
+    BanxicoMXNOTR().run(force_update=True)
 
     # ---- Fixings ----
     fixing_cfg = FixingRateConfig(
@@ -104,7 +104,7 @@ def main() -> None:
             ),
         ]
     )
-    FixingRatesNode(rates_config=fixing_cfg).run(debug_mode=True, force_update=True)
+    FixingRatesNode(rates_config=fixing_cfg).run(force_update=True)
 
     # ---- Discount curve ----
     curve_cfg = CurveConfig(
@@ -112,7 +112,7 @@ def main() -> None:
         name="Discount Curve M Bonos Banxico Bootstrapped",
         curve_points_dependency_node_uid=ON_THE_RUN_DATA_NODE_TABLE_NAME,
     )
-    DiscountCurvesNode(curve_config=curve_cfg).run(debug_mode=True, force_update=True)
+    DiscountCurvesNode(curve_config=curve_cfg).run(force_update=True)
 
 
 if __name__ == "__main__":

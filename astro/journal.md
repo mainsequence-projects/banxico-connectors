@@ -4,31 +4,75 @@
 
 ### 2026-03-16
 
-- Created the required Astro project records:
+- Created the required Astro tracking files:
   - `astro/journal.md`
   - `astro/tasks.md`
   - `astro/docs/index.md`
-- Ran `mainsequence project update-sdk --path .` before validation, as required by `astro/instructions.md`.
-- Ran `mainsequence project refresh_token --path .` before live CLI verification.
-- Re-verified the current backend state for project `138` from `<MAINSEQUENCE_WORKBENCH>/projects/138`.
-- Confirmed that project image `23` still exists for repo commit `6884804062210fdcdcce3887ec2d43c43fddae13`.
-- Confirmed that dashboard job `421` still exists for `dashboards/banxico_rates_monitor/app.py`.
+- Updated the project SDK to the current MainSequence release and aligned the
+  exported dependency file:
+  - installed SDK: `3.15.4`
+  - `requirements.txt`: `3.15.4`
+  - `mainsequence project current --debug` now reports `Status: match`
+- Identified the root cause of the forward-dated Banxico history:
+  - Banxico returns dates as `DD/MM/YYYY`
+  - the source transformation had been parsing them with generic
+    `pd.to_datetime(...)`
+  - example of the bad parse: `12/01/2026 -> 2026-12-01`
+- Fixed the repository code so the issue cannot silently recur:
+  - `banxico_connectors/utils.py` now parses Banxico dates with explicit
+    `%d/%m/%Y`
+  - `banxico_connectors/data_nodes/banxico_mx_otr.py` now raises if a source
+    update produces future-dated rows beyond the allowed update window
+  - the dashboard now separates future-dated rows from valid history and warns
+    explicitly instead of plotting them as if they were current observations
+- Cleaned the stale platform state that was known to be wrong:
+  - deleted the old dashboard resource release `7`
+  - deleted the Banxico source and downstream storages:
+    - `discount_curves` storage `5660`
+    - `fixing_rates_1d` storage `5662`
+    - `banxico_1d_otr_mxn` storage `5664`
+  - verified afterward that those three table identifiers no longer resolve
+- Cleaned the dashboard job state for the active Banxico dashboard:
+  - project image `24` exists for repo commit `c25a3aa`
+  - dashboard job `426` exists for `dashboards/banxico_rates_monitor/app.py`
+  - dashboard run `1327` succeeded
+- Created a recurring ETL job directly through the current CLI as a fallback to
+  the broken batch flow:
+  - job `429`
+  - name `Banxico Curves Refresh`
+  - execution path `scripts/build_curves.py`
+  - image `24`
+  - cron `0 0 * * *`
+- Ran the new ETL job once to validate the runtime:
+  - run `1328`
+  - status `FAILED`
+- Identified a second repo-side ETL issue from the failed remote run:
+  - `scripts/build_curves.py` was forcing `debug_mode=True`
+  - the remote run entered local-mode behavior and failed during node startup
+  - the repo has now been patched so the three node runs no longer force
+    `debug_mode=True`
 
 ## Failed
 
 ### 2026-03-16
 
 - `mainsequence project project_resource list 138 --path . --timeout 60`
-  returned `0` resources for repo commit `6884804062210fdcdcce3887ec2d43c43fddae13`.
+  still returns `0` resources for the current remote head.
+- `mainsequence project schedule_batch_jobs scheduled_jobs.yaml 138 --path . --strict --timeout 60`
+  failed with:
+  - `400 POST https://main-sequence.app/orm/api/pods/job/sync_jobs/: {"project_id":["This field is required."]}`
+  - this happened even though the CLI command was given project id `138`
+- ETL run `1328` failed before any Banxico rebuild completed.
+  - the visible log tail ends with:
+    - `Could not retrieve pod project running in local mode`
+    - `Main Sequence Running in local mode no pod attached`
+    - `Creating configuration for BanxicoMXNOTR`
+    - `Uncaught exception`
+  - this is consistent with the old `debug_mode=True` runner behavior that has
+    now been removed locally
 - `mainsequence project data-node-updates list 138 --timeout 60`
-  returned no data node updates.
-- The old `sample_app` dashboard job still exists:
-  - job `348`
-  - path `dashboards/sample_app/app.py`
-- The stale tutorial translation table still exists:
-  - table `38`
-  - unique identifier `prices_translation_table_1d_tutorial_135`
-  - mapping `security_type=MOCK_ASSET_TUTORIAL_135 => simulated_daily_closes_tutorial_135 (close)`
+  still does not show Banxico rebuild activity, which is expected because the
+  Banxico tables were deleted and the ETL rebuild has not succeeded yet.
 
 ## Failed Due to Possible MainSequence Issue
 
@@ -36,45 +80,57 @@
 
 - Direct backend post-commit sync still fails:
   - call: `sync_project_after_commit(138, timeout=60)`
-  - result: `405 POST https://main-sequence.app/orm/api/pods/projects/138/sync_project_after_commit/: Method "POST" not allowed.`
-  - why this may be an SDK or platform issue:
-    the CLI expects this endpoint to exist and uses it as part of the documented sync workflow, but the backend currently rejects the method entirely.
-  - suggested MainSequence improvement:
-    either restore the endpoint contract or make the CLI detect the unsupported endpoint and fall back to a supported resource-indexing workflow with a clear error message.
-- `mainsequence project update-sdk --path .` reported `SDK update complete`, but `mainsequence project current --debug` still reports:
-  - `Latest (GitHub): v3.15.2`
-  - `Local (requirements.txt): 3.11.1`
-  - why this may be an SDK issue:
-    the update command appears successful while the reported project version remains unchanged.
-  - suggested MainSequence improvement:
-    make `update-sdk` fail loudly when `requirements.txt` or the resolved local version do not actually change.
-- The current CLI surface does not expose a direct project-scoped asset listing command under `mainsequence markets`.
-  - suggested MainSequence improvement:
-    provide a first-class `markets assets list` command, ideally with project-scoped filters, so platform verification can cover assets without dropping to SDK calls.
+  - result:
+    `405 POST https://main-sequence.app/orm/api/pods/projects/138/sync_project_after_commit/: Method "POST" not allowed.`
+- Project resource indexing is still not updating for the current repo head:
+  - symptom:
+    `mainsequence project project_resource list 138 --path . --timeout 60`
+    returns `0` resources even after image creation and a successful dashboard
+    run
+- Image deletion is still blocked by the backend:
+  - `mainsequence project images delete 23 --yes --timeout 60`
+    returned:
+    `405 DELETE https://main-sequence.app/orm/api/pods/project-image/23/: Method "DELETE" not allowed.`
+- The current batch scheduling endpoint appears broken for project job sync:
+  - `mainsequence project schedule_batch_jobs ... --strict`
+    returned:
+    `400 .../sync_jobs/: {"project_id":["This field is required."]}`
+  - the CLI did submit project id `138`, so either the CLI payload or the
+    backend contract is not aligned
 
 ## Current Tasks Snapshot
 
-- Restore backend resource indexing for project `138` so `project_resource list` returns dashboard resources for commit `6884804062210fdcdcce3887ec2d43c43fddae13`.
-- Replace or remove the stale `sample_app` dashboard job `348` after the Banxico dashboard path is fully healthy.
-- Verify that dashboard job `421` remains healthy and that run `1322` reaches a stable terminal or service-ready state.
-- Investigate whether translation table `38` is still intentionally needed; remove or isolate it if it is only legacy tutorial state.
-- Resolve the `update-sdk` versus reported local version mismatch.
-- Migrate or reconcile formal project documentation into `astro/docs/` so the project matches the Astro documentation standard.
+- Push the `scripts/build_curves.py` runner fix, build a new project image, and
+  move the ETL job to that image.
+- Rerun the Banxico ETL and verify the three deleted tables are recreated
+  without future-dated history.
+- Confirm whether the next ETL blocker is a missing Banxico runtime secret or
+  something else after the `debug_mode` fix is deployed.
+- Restore backend resource indexing so project `138` exposes its current
+  dashboard resources.
+- Investigate the `schedule_batch_jobs` strict-sync failure.
+- Investigate the `sync_project_after_commit` `405` failure.
+- Remove stale image `23` once image deletion is supported again.
 
 ## Error Resolution Check
 
 ### 2026-03-16
 
-- `sync_project_after_commit` `405`:
-  - already documented from previous work
-  - still reproducible
-  - previous mitigation attempts did not restore project resources
-  - a backend or SDK workflow fix is still needed
+- forward-dated Banxico source rows:
+  - root cause found
+  - repo fix implemented locally
+  - live tables were deleted so the bad history is no longer active
+  - rebuild still pending
+- old dashboard tutorial state:
+  - old dashboard release removed
+  - old jobs `348` and `421` are no longer present in the current jobs list
+- SDK version drift:
+  - resolved
+  - local project now matches latest SDK `3.15.4`
 - `project_resource list` returning `0` resources:
-  - already documented from previous work
   - still reproducible
-  - current image and job state did not resolve it
-- dashboard run `1322` status:
-  - previous state: `PENDING`
-  - current state: `RUNNING`
-  - earlier `PENDING` statement is no longer accurate
+- `schedule_batch_jobs --strict`:
+  - still failing
+- remote ETL execution:
+  - first clean test run failed
+  - repo-side runner fix is prepared but not yet deployed in a new image

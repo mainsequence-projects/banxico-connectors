@@ -132,7 +132,7 @@ kiwisolver==1.4.9
     # via matplotlib
 korean-lunar-calendar==0.3.1
     # via exchange-calendars
-mainsequence==3.11.1
+mainsequence==3.15.4
     # via banxico-connectors
 markdown-it-py==4.0.0
     # via rich
