@@ -20,6 +20,8 @@ from dashboards.banxico_rates_monitor.common import (
     fetch_table_df,
     latest_rows,
     normalize_frame,
+    render_future_rows_warning,
+    separate_future_rows,
 )
 
 
@@ -42,10 +44,13 @@ lookback_days = st.sidebar.select_slider(
 )
 start_date = default_start_date(lookback_days)
 
-fixings_df = normalize_frame(fetch_table_df(FIXINGS_TABLE_IDENTIFIER, start_date=start_date))
-curves_flat = decode_curve_frame(fetch_table_df(CURVES_TABLE_IDENTIFIER, start_date=start_date))
+fixings_df, future_fixings = separate_future_rows(fetch_table_df(FIXINGS_TABLE_IDENTIFIER, start_date=start_date))
+curves_flat, future_curves = separate_future_rows(
+    decode_curve_frame(fetch_table_df(CURVES_TABLE_IDENTIFIER, start_date=start_date))
+)
 
 st.markdown("### Fixings")
+render_future_rows_warning("Fixing Rates Node", future_fixings)
 if fixings_df.empty:
     st.warning("No fixing-rates data is available yet.")
 else:
@@ -81,6 +86,7 @@ else:
         )
 
 st.markdown("### Zero Curves")
+render_future_rows_warning("Discount Curves Node", future_curves)
 if curves_flat.empty:
     st.warning("No discount-curve data is available yet.")
 else:

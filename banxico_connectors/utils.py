@@ -15,6 +15,7 @@ import time
 # ======================
 
 BANXICO_SIE_BASE = "https://www.banxico.org.mx/SieAPIRest/service/v1"
+BANXICO_DATE_FORMAT = "%d/%m/%Y"
 
 def _coerce_float(value: str) -> Optional[float]:
     if value is None:
@@ -61,7 +62,12 @@ def normalize_series(raw_series: list, metric_map: Dict[str, str], tenor_map: Di
         title = s.get("titulo")
         for p in s.get("datos", []):
             rows.append({
-                "date": pd.to_datetime(p.get("fecha"), errors="coerce"),
+                "date": pd.to_datetime(
+                    p.get("fecha"),
+                    format=BANXICO_DATE_FORMAT,
+                    errors="coerce",
+                    utc=True,
+                ),
                 "series_id": sid,
                 "title": title,
                 "value": _coerce_float(p.get("dato")),
@@ -152,8 +158,14 @@ def to_long(raw_series: List[dict], metric_by_sid: Dict[str, str]) -> pd.DataFra
     df = df.rename(columns={"fecha": "date", "dato": "value", "idSerie": "series_id"})
     df["metric"] = df["series_id"].map(metric_by_sid)
 
-    # vectorized parsing (avoid per-row apply)
-    df["date"] = pd.to_datetime(df["date"], errors="coerce")  # add format=... if you know it for extra speed
+    # Banxico returns DD/MM/YYYY strings. Generic parsing silently misreads
+    # ambiguous dates such as 12/01/2026 as 2026-12-01.
+    df["date"] = pd.to_datetime(
+        df["date"].astype(str).str.strip(),
+        format=BANXICO_DATE_FORMAT,
+        errors="coerce",
+        utc=True,
+    )
     # fast-ish number parse incl. comma decimals; tweak if your values are already numeric
     df["value"] = pd.to_numeric(
         df["value"].astype(str).str.replace(",", "", regex=False),
@@ -194,5 +206,4 @@ def to_long_with_aliases(raw_series: List[dict], aliases_by_sid: Dict[str, List[
 
     df = df.dropna(subset=["date"]).sort_values(["alias", "date"], kind="stable").reset_index(drop=True)
     return df[["date", "alias", "value"]]
-
 

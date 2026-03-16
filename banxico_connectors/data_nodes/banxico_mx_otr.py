@@ -72,6 +72,28 @@ class BanxicoMXNOTR(DataNode):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+    @staticmethod
+    def _assert_no_future_time_index(df: pd.DataFrame, max_allowed: dt.datetime) -> None:
+        if df.empty:
+            return
+        time_index = pd.to_datetime(
+            df.index.get_level_values("time_index"),
+            utc=True,
+            errors="coerce",
+        )
+        future_rows = time_index[time_index > pd.Timestamp(max_allowed)]
+        if future_rows.empty:
+            return
+        sample_dates = ", ".join(
+            pd.Series(future_rows.unique()).sort_values().dt.strftime("%Y-%m-%d").head(5).tolist()
+        )
+        raise ValueError(
+            "BanxicoMXNOTR produced future-dated observations beyond the requested update window. "
+            f"Max allowed date: {max_allowed.date().isoformat()}. "
+            f"Sample future dates: {sample_dates}. "
+            "This usually means Banxico DD/MM/YYYY dates were parsed incorrectly or the source payload format changed."
+        )
+
     def dependencies(self) -> Dict[str, Union["DataNode", "APIDataNode"]]:
         return {}
 
@@ -318,5 +340,6 @@ class BanxicoMXNOTR(DataNode):
         out = out.replace(np.nan, None)
 
         out=out[out.days_to_maturity>0] #some banxico series have errors
+        self._assert_no_future_time_index(out, yday)
 
         return out

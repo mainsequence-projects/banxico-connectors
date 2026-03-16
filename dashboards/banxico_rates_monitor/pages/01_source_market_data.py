@@ -19,6 +19,8 @@ from dashboards.banxico_rates_monitor.common import (
     enrich_source_frame,
     fetch_table_df,
     latest_rows,
+    render_future_rows_warning,
+    separate_future_rows,
 )
 
 
@@ -41,7 +43,9 @@ lookback_days = st.sidebar.select_slider(
 )
 
 source_df = fetch_table_df(ON_THE_RUN_DATA_NODE_TABLE_NAME, start_date=default_start_date(lookback_days))
-flat = enrich_source_frame(source_df)
+flat, future_rows = separate_future_rows(source_df)
+render_future_rows_warning("Banxico Source Node", future_rows)
+flat = enrich_source_frame(flat)
 
 if flat.empty:
     st.warning("No source-node observations are currently available for the selected lookback window.")

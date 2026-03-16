@@ -23,7 +23,9 @@ from dashboards.banxico_rates_monitor.common import (
     get_bindings,
     latest_rows,
     normalize_frame,
+    render_future_rows_warning,
     render_binding_alert,
+    separate_future_rows,
 )
 
 
@@ -50,7 +52,9 @@ def _render_binding_cards() -> None:
 
 def _render_source_overview() -> None:
     df = fetch_table_df(ON_THE_RUN_DATA_NODE_TABLE_NAME, start_date=default_start_date(365))
-    flat = enrich_source_frame(df)
+    flat, future_rows = separate_future_rows(df)
+    render_future_rows_warning("Banxico Source Node", future_rows)
+    flat = enrich_source_frame(flat)
     if flat.empty:
         st.info("No Banxico source data is currently available. Use the deployment checks and ETL job flow first.")
         return

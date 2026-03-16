@@ -135,6 +135,40 @@ def normalize_frame(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def separate_future_rows(
+    df: pd.DataFrame,
+    *,
+    cutoff: pd.Timestamp | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    flat = normalize_frame(df)
+    if flat.empty or "time_index" not in flat.columns:
+        return flat, flat.iloc[0:0].copy()
+
+    cutoff_ts = (cutoff or _utc_now()).normalize()
+    future_mask = flat["time_index"] > cutoff_ts
+    return flat.loc[~future_mask].copy(), flat.loc[future_mask].copy()
+
+
+def render_future_rows_warning(
+    title: str,
+    future_df: pd.DataFrame,
+    *,
+    cutoff: pd.Timestamp | None = None,
+) -> None:
+    if future_df.empty or "time_index" not in future_df.columns:
+        return
+    cutoff_ts = (cutoff or _utc_now()).normalize()
+    earliest = future_df["time_index"].min()
+    latest = future_df["time_index"].max()
+    st.warning(
+        f"{title} contains {len(future_df):,} future-dated rows beyond {cutoff_ts.strftime('%Y-%m-%d')}. "
+        f"Earliest future date: {earliest.strftime('%Y-%m-%d')}. "
+        f"Latest future date: {latest.strftime('%Y-%m-%d')}. "
+        "The dashboard is excluding those rows from charts and latest-snapshot views. "
+        "This usually comes from an earlier DD/MM/YYYY parsing bug in the Banxico source loader."
+    )
+
+
 def enrich_source_frame(df: pd.DataFrame) -> pd.DataFrame:
     flat = normalize_frame(df)
     if flat.empty:
@@ -264,7 +298,7 @@ def availability_summary(binding: TableBinding, df: pd.DataFrame) -> dict[str, s
             "rows": "0",
             "identifiers": "0",
         }
-    flat = normalize_frame(df)
+    flat, future = separate_future_rows(df)
     latest = "-"
     identifiers = 0
     if not flat.empty and "time_index" in flat.columns:
@@ -273,7 +307,15 @@ def availability_summary(binding: TableBinding, df: pd.DataFrame) -> dict[str, s
     if not flat.empty and "unique_identifier" in flat.columns:
         identifiers = flat["unique_identifier"].nunique()
     return {
-        "status": "Available" if not flat.empty else "Empty",
+        "status": (
+            "Available + Future Rows"
+            if not flat.empty and not future.empty
+            else "Future Rows Only"
+            if flat.empty and not future.empty
+            else "Available"
+            if not flat.empty
+            else "Empty"
+        ),
         "latest_time_index": latest,
         "rows": f"{len(flat):,}",
         "identifiers": f"{identifiers:,}",

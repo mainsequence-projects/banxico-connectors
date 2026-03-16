@@ -22,7 +22,9 @@ from dashboards.banxico_rates_monitor.common import (
     fetch_table_df,
     get_bindings,
     normalize_frame,
+    render_future_rows_warning,
     render_binding_alert,
+    separate_future_rows,
     storage_data_source_id,
 )
 
@@ -44,11 +46,18 @@ start_date = default_start_date(365)
 source_df = fetch_table_df(ON_THE_RUN_DATA_NODE_TABLE_NAME, start_date=start_date)
 fixings_df = fetch_table_df(FIXINGS_TABLE_IDENTIFIER, start_date=start_date)
 curves_df = fetch_table_df(CURVES_TABLE_IDENTIFIER, start_date=start_date)
+source_current, source_future = separate_future_rows(source_df)
+fixings_current, fixings_future = separate_future_rows(fixings_df)
+curves_current, curves_future = separate_future_rows(curves_df)
 
 table_rows = []
-for key, df in [("source", source_df), ("fixings", fixings_df), ("curves", curves_df)]:
+for key, raw_df, df, future_df in [
+    ("source", source_df, source_current, source_future),
+    ("fixings", fixings_df, fixings_current, fixings_future),
+    ("curves", curves_df, curves_current, curves_future),
+]:
     binding = bindings[key]
-    summary = availability_summary(binding, df)
+    summary = availability_summary(binding, raw_df)
     table_rows.append(
         {
             "title": binding.title,
@@ -59,6 +68,12 @@ for key, df in [("source", source_df), ("fixings", fixings_df), ("curves", curve
             "latest_time_index": summary["latest_time_index"],
             "rows": summary["rows"],
             "identifiers": summary["identifiers"],
+            "future_rows": f"{len(future_df):,}",
+            "future_latest_time_index": (
+                future_df["time_index"].max().strftime("%Y-%m-%d")
+                if not future_df.empty and "time_index" in future_df.columns
+                else "-"
+            ),
         }
     )
 
@@ -67,6 +82,10 @@ st.dataframe(pd.DataFrame(table_rows), width="stretch", hide_index=True)
 
 for binding in bindings.values():
     render_binding_alert(binding)
+
+render_future_rows_warning(bindings["source"].title, source_future)
+render_future_rows_warning(bindings["fixings"].title, fixings_future)
+render_future_rows_warning(bindings["curves"].title, curves_future)
 
 st.markdown("### Healthy Deployment Checklist")
 st.markdown(
@@ -95,9 +114,9 @@ else:
 st.markdown("### Data Preview")
 preview_df = normalize_frame(
     {
-        "source": enrich_source_frame(source_df),
-        "fixings": fixings_df,
-        "curves": curves_df,
+        "source": enrich_source_frame(source_current),
+        "fixings": fixings_current,
+        "curves": curves_current,
     }[choice]
 )
 if preview_df.empty:
