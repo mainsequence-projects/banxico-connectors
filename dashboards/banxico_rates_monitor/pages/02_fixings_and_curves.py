@@ -78,7 +78,7 @@ else:
             title="Fixing Rates History",
         )
         fix_fig.update_layout(margin=dict(l=20, r=20, t=60, b=20))
-        st.plotly_chart(fix_fig, use_container_width=True)
+        st.plotly_chart(fix_fig, width="stretch")
         st.dataframe(
             latest_fixings.sort_values("unique_identifier").reset_index(drop=True),
             width="stretch",
@@ -135,7 +135,7 @@ else:
             legend_title="Curve date",
             margin=dict(l=20, r=20, t=60, b=20),
         )
-        st.plotly_chart(curve_fig, use_container_width=True)
+        st.plotly_chart(curve_fig, width="stretch")
 
         latest_curve = latest_rows(filtered_curves.set_index(["time_index", "unique_identifier"]))
         st.dataframe(

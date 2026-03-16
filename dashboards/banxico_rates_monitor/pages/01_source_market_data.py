@@ -95,7 +95,7 @@ if not chart_df.empty:
         hover_data=["instrument_family", "type", "quote_type", "coupon_type"],
     )
     fig.update_layout(margin=dict(l=20, r=20, t=60, b=20))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 latest_panel = latest.sort_values(["instrument_family", "unique_identifier"]).reset_index(drop=True)
 st.markdown("### Latest Snapshot")
@@ -118,7 +118,7 @@ if not coverage.empty:
         barmode="group",
     )
     coverage_fig.update_layout(margin=dict(l=20, r=20, t=60, b=20))
-    st.plotly_chart(coverage_fig, use_container_width=True)
+    st.plotly_chart(coverage_fig, width="stretch")
 
 st.markdown("### Asset Registry Snapshot")
 asset_frame = build_asset_frame(sorted(latest_panel["unique_identifier"].astype(str).unique().tolist()))
