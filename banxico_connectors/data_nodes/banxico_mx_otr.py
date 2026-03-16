@@ -198,7 +198,9 @@ class BanxicoMXNOTR(DataNode):
         # --- 0) Token from env (no params by design)
         token = os.getenv("BANXICO_TOKEN")
         if not token:
-            raise RuntimeError("BANXICO_TOKEN environment variable is required for Banxico SIE access.")
+            message = "BANXICO_TOKEN environment variable is required for Banxico SIE access."
+            self.logger.error(message)
+            raise RuntimeError(message)
 
         # --- 1) Compute update window (yesterday 00:00 UTC end). Start = min(last+1d)
         yday = dt.datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0) - dt.timedelta(days=1)

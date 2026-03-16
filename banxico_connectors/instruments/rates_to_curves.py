@@ -4,6 +4,7 @@ from typing import Callable, Mapping, Optional
 
 import pandas as pd
 import pytz
+from mainsequence.logconf import logger
 
 from banxico_connectors.utils import fetch_banxico_series_batched, to_long_with_aliases
 from banxico_connectors.settings import get_tiie_fixing_id_map, get_cete_fixing_id_map
@@ -119,7 +120,12 @@ def _update_banxico_fixings(
     assert unique_identifier in id_map, f"Invalid unique identifier for {unique_identifier}"
     token = os.getenv("BANXICO_TOKEN")
     if not token:
-        raise RuntimeError("BANXICO_TOKEN environment variable is required for Banxico SIE access.")
+        message = (
+            f"BANXICO_TOKEN environment variable is required for Banxico SIE access "
+            f"when updating {instrument_label}."
+        )
+        logger.error(message)
+        raise RuntimeError(message)
 
     if value_to_rate is None:
         value_to_rate = lambda s: s / 100.0  # default: percent -> decimal
