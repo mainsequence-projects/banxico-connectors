@@ -1,4 +1,4 @@
-# General Instructions for Extensions, Documentation, Development, and Maintenance of the Project
+# General Instructions for Extensions, Documentation, Development, and Maintenance of the Project for Coding Assistants
 
 You are working on this project and must always follow these instructions as persistent context.
 
@@ -8,8 +8,9 @@ You are working on this project and must always follow these instructions as per
 - Correct inconsistencies as soon as you find them.
 - Use strict code. Avoid defensive guards on the hot path. Fail fast, especially when updating `DataNodes`.
 - Do not hide failures. Record them clearly and explain the cause.
-- If a failure may be caused by the MainSequence library or SDK, state that explicitly and suggest how the SDK could be improved to prevent the issue.
+- If a failure may be caused by the MainSequence library or SDK, state that explicitly and suggest a concrete improvement to the SDK.
 - Before starting any work, upgrade to the latest MainSequence SDK version using the CLI.
+- Always compare the implementation against the latest MainSequence SDK behavior and public documentation.
 - Before running validations, run `mainsequence project refresh_token`.
 - Verify all relevant resources using the CLI: `DataNodes`, updates, stored data, jobs, dashboards, assets, portfolios, and related platform objects.
 - For `DataNodes` that may contain a large amount of data, always test first in a test namespace and with a smaller time range before running a full update or backfill.
@@ -22,16 +23,7 @@ Use a project root called:
 
 `astro/`
 
-These files must exist inside that root:
-
-- `astro/journal.md`
-- `astro/tasks.md`
-
-Documentation must follow `MkDocs` and must live inside:
-
-- `astro/docs/`
-
-Be strict about creating these files and folders and about why they exist.
+Be strict about creating and maintaining the following paths and about preserving their purpose.
 
 ### `astro/journal.md`
 Create this file as the historical record of the project.
@@ -45,7 +37,7 @@ Its purpose is to preserve:
 - what tasks existed at a given moment
 - whether a known error had already been solved before
 
-This file is historical. Do not overwrite history. Append and organize it clearly.
+This file is historical. Do not overwrite history. Append to it and keep it organized.
 
 ### `astro/tasks.md`
 Create this file as the active task list for the current implementation state.
@@ -62,18 +54,34 @@ This file is not historical. Remove completed, obsolete, or superseded tasks.
 
 Do not use `tasks.md` as a journal.
 
-### `astro/docs/`
+### `docs/`
 Create this folder as the documentation root for the project.
 
-Its purpose is to contain the project documentation in a structure compatible with `MkDocs`.
+Its purpose is to contain the formal project documentation in a structure compatible with `MkDocs`.
 
-Rules:
+## Documentation Standard
 
-- All project documentation pages must be inside `astro/docs/`.
-- The documentation structure must follow `MkDocs` conventions.
-- The documentation navigation must be consistent with the actual file structure.
-- The main project README must explain how the documentation is organized.
-- Any new documented feature, workflow, or component must be added to the `MkDocs` documentation structure.
+- All formal project documentation must live under `docs/`.
+- Documentation must follow an `MkDocs`-compatible structure.
+- The documentation navigation must match the actual file structure.
+- The root `README.md` must remain the project entry point. It should provide a high-level overview, explain the purpose of the library, and point readers to the documentation.
+- Each major area of the project must have its own documentation page under `docs/`.
+- Local `README.md` files should only be added when a package or component needs usage instructions close to the code. They must not replace the main project documentation.
+- Operational and verification procedures, including CLI checks and backend validation, must be documented in a dedicated page under `docs/`.
+- Any new feature, workflow, component, or integration must be reflected in the documentation.
+
+## Very Important: Dashboard Development
+
+- When building a dashboard using Streamlit, always refer to the documentation at:
+
+  `https://github.com/mainsequence-sdk/mainsequence-sdk/tree/main/docs/knowledge/dashboards/streamlit`
+
+- When building dashboards, separate UI components into:
+
+  `dashboards/components/`
+
+- Prefer reusable components whenever possible.
+- If you build a component that is not currently in the MainSequence platform and you believe it would be generally useful, open a pull request in the public `mainsequence-sdk` repository.
 
 ## Journal Requirements
 
@@ -96,7 +104,7 @@ For each such issue, include:
 
 - what failed
 - why it may be an SDK or library issue
-- what should be improved in the MainSequence SDK to avoid this error in the future
+- what should be improved in the MainSequence SDK to avoid the error in the future
 
 ### Current Tasks Snapshot
 Record the current task list in the journal for historical tracking.
@@ -128,17 +136,17 @@ Rules for `tasks.md`:
 
 Do not hardcode machine-specific local paths such as:
 
-`/Users/jose/mainsequence/main-sequence-workbench/projects/banxico-connectors-138`
+`/Users/jose/mainsequence/main-sequence-workbench/projects/project-ID`
 
 Use a standard placeholder path instead, for example:
 
-`<MAINSEQUENCE_WORKBENCH>/projects/banxico-connectors`
+`<MAINSEQUENCE_WORKBENCH>/projects/project-ID`
 
 If this library depends on another local project, document that dependency using the same standard path convention and follow that project as a reference standard where relevant.
 
-## Documentation Structure
+## Documentation Content Requirements
 
-All documentation must be written under `astro/docs/` and organized for `MkDocs`.
+All documentation must be written under `docs/` and organized for `MkDocs`.
 
 ### 1. Introduction
 Explain what the library does. This section should closely follow the main project README and summarize the purpose of the library clearly.
@@ -178,11 +186,9 @@ Explain how `mainsequence.instruments` is used, including:
 Explain which dashboards are created, what they show, and how they relate to the underlying data and workflows.
 
 ### 6. Documentation Map
-The main project README must explain how the documentation is organized.
+The root `README.md` must explain how the documentation is organized and where each topic lives.
 
-The `MkDocs` structure must remain aligned with the actual documentation layout inside `astro/docs/`.
-
-## Review of MainSequence Documentation
+## MainSequence SDK Review and Contribution Rules
 
 Review the MainSequence SDK documentation here:
 
@@ -197,11 +203,18 @@ Do not create a separate improvement file. Instead:
 
 This review should include:
 
-- inconsistencies between this project and MainSequence docs
+- inconsistencies between this project and MainSequence documentation
 - missing documentation in this project
 - missing or unclear documentation in MainSequence
 - SDK usability issues discovered while working on this project
-- concrete suggestions to improve the MainSequence SDK or docs
+- concrete suggestions to improve the MainSequence SDK or documentation
+
+If you find any error, bug, inefficiency, or anything important to highlight in `mainsequence-sdk`, open an issue ticket on the public repository.
+
+If you open an issue or a pull request related to a project finding, record it in:
+
+- `astro/journal.md`
+- `astro/tasks.md` if further work is still required
 
 ## CLI Verification Requirements
 
@@ -230,4 +243,4 @@ If live verification is not possible, state that clearly and provide the exact C
 - Do not use machine-specific assumptions.
 - Surface failures early.
 - When unsure, verify with the CLI.
-- When something looks like an SDK problem, document it and propose a concrete improvement.
+- When something looks like an SDK problem, document it, suggest a concrete improvement, and open a public issue when appropriate.
