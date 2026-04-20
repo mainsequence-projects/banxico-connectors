@@ -26,7 +26,9 @@ The asset universe follows these identifier patterns:
 | `BONDES_D_<tenor>_OTR` | Bondes D on-the-run buckets |
 | `BONDES_F_<tenor>_OTR` | Bondes F on-the-run buckets |
 | `BONDES_G_<tenor>_OTR` | Bondes G on-the-run buckets |
-| `BANXICO_TARGET_RATE` | Banxico overnight target-rate anchor |
+
+`BANXICO_TARGET_RATE` is not part of the OTR asset universe. It is stored as a
+fixing in `fixing_rates_1d` and used as the one-day curve anchor.
 
 ## Constants Seeded
 
@@ -41,6 +43,7 @@ constants expected by the connector:
 - `REFERENCE_RATE__CETE_91`
 - `REFERENCE_RATE__CETE_182`
 - `REFERENCE_RATE__TIIE_OVERNIGHT_BONDES`
+- `BANXICO_TARGET_RATE`
 - `ZERO_CURVE__BANXICO_M_BONOS_OTR`
 
 ## Platform Datasets Created
@@ -49,6 +52,7 @@ When `scripts/build_curves.py` runs, it creates or refreshes:
 
 - A source DataNode table: `banxico_1d_otr_mxn`
 - Fixing datasets for:
+  - Banxico target rate
   - TIIE overnight
   - TIIE 28d
   - TIIE 91d

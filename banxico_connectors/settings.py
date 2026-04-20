@@ -1,7 +1,21 @@
 from typing import Dict, Tuple, Optional, Union, List
 from functools import cache
 
-from mainsequence.client import Constant as _C
+try:
+    from mainsequence.client import Constant as _C, Secret as _S
+except Exception as exc:
+    _C = None
+    _S = None
+    _MS_CLIENT_IMPORT_ERROR = f"{type(exc).__name__}: {exc}"
+else:
+    _MS_CLIENT_IMPORT_ERROR = None
+
+
+def _assert_mainsequence_client() -> None:
+    if _C is None or _S is None:
+        raise RuntimeError(
+            "mainsequence client is not available. Set MAINSEQUENCE_ACCESS_TOKEN / MAINSEQUENCE_REFRESH_TOKEN and project context correctly."
+        )
 
 
 
@@ -84,9 +98,34 @@ FONDEO_GUVBERNAMENTAL={"":"SF43774"}
 
 BANXICO_TARGET_RATE="BANXICO_TARGET_RATE"
 ON_THE_RUN_DATA_NODE_TABLE_NAME="banxico_1d_otr_mxn"
+BANXICO_TOKEN_SECRET_NAME = "BANXICO_TOKEN"
 
 MONEY_MARKET_RATES={BANXICO_TARGET_RATE:"SF61745",
                     }
+
+
+def get_banxico_token() -> str:
+    """
+    Resolve the Banxico SIE API token from a Main Sequence Secret.
+
+    The secret must be named BANXICO_TOKEN and shared with the authenticated
+    project/session that runs the DataNode or fixing updater.
+    """
+    try:
+        _assert_mainsequence_client()
+        secret = _S.get(name=BANXICO_TOKEN_SECRET_NAME)
+        value = secret.value
+        if value is None:
+            raise RuntimeError(f"Secret {BANXICO_TOKEN_SECRET_NAME!r} has no readable value.")
+        token = value.get_secret_value() if hasattr(value, "get_secret_value") else str(value)
+        if not token:
+            raise RuntimeError(f"Secret {BANXICO_TOKEN_SECRET_NAME!r} is empty.")
+        return token
+    except Exception as e:
+        raise RuntimeError(
+            f"Main Sequence Secret {BANXICO_TOKEN_SECRET_NAME!r} is required for Banxico SIE access. "
+            "Create it with `mainsequence secrets create BANXICO_TOKEN <token>` and ensure this project can view it."
+        ) from e
 
 
 @cache
@@ -96,6 +135,7 @@ def get_tiie_fixing_id_map() -> Dict[str, str]:
     No Constant calls at import time.
     """
     try:
+        _assert_mainsequence_client()
         return {
             _C.get_value(name="REFERENCE_RATE__TIIE_OVERNIGHT"): "SF331451",
             _C.get_value(name="REFERENCE_RATE__TIIE_28"): "SF43783",
@@ -116,6 +156,7 @@ def get_cete_fixing_id_map() -> Dict[str, str]:
     No Constant calls at import time.
     """
     try:
+        _assert_mainsequence_client()
         return {
             _C.get_value(name="REFERENCE_RATE__CETE_28"): "SF45470",
             _C.get_value(name="REFERENCE_RATE__CETE_91"): "SF45471",
@@ -128,4 +169,19 @@ def get_cete_fixing_id_map() -> Dict[str, str]:
         ) from e
 
 
-
+@cache
+def get_banxico_target_rate_id_map() -> Dict[str, str]:
+    """
+    Resolve Banxico target-rate UID -> Banxico SIE series id mapping lazily.
+    No Constant calls at import time.
+    """
+    try:
+        _assert_mainsequence_client()
+        return {
+            _C.get_value(name=BANXICO_TARGET_RATE): MONEY_MARKET_RATES[BANXICO_TARGET_RATE],
+        }
+    except Exception as e:
+        raise RuntimeError(
+            "Missing Banxico target-rate constant. "
+            "Run instruments.scafold.seed_defaults() (or create the constant) before using Banxico fixings."
+        ) from e

@@ -21,6 +21,7 @@ from dashboards.banxico_rates_monitor.common import (
     enrich_source_frame,
     fetch_table_df,
     get_bindings,
+    render_backend_status,
     normalize_frame,
     render_future_rows_warning,
     render_binding_alert,
@@ -40,6 +41,9 @@ run_page(
 st.caption(
     "Check table bindings, storage metadata, and backend availability for the Banxico dashboard inputs."
 )
+
+if render_backend_status():
+    st.stop()
 
 bindings = get_bindings()
 start_date = default_start_date(365)

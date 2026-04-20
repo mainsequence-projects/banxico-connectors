@@ -28,7 +28,7 @@ from mainsequence.instruments.interest_rates.etl.nodes import (
     RateConfig,
 )
 
-from banxico_connectors.data_nodes.banxico_mx_otr import BanxicoMXNOTR
+from banxico_connectors.data_nodes.banxico_mx_otr import BanxicoMXNOTR, BanxicoMXNOTRConfig
 from banxico_connectors.settings import ON_THE_RUN_DATA_NODE_TABLE_NAME
 
 
@@ -37,6 +37,7 @@ _REQUIRED_CURVE_CONSTS = (
 )
 
 _REQUIRED_FIXING_CONSTS = (
+    "BANXICO_TARGET_RATE",
     "REFERENCE_RATE__TIIE_OVERNIGHT",
     "REFERENCE_RATE__TIIE_28",
     "REFERENCE_RATE__TIIE_91",
@@ -69,11 +70,15 @@ def main() -> None:
     _assert_registry_wired()
 
     # ---- Refresh Banxico OTR points ----
-    BanxicoMXNOTR().run(force_update=True)
+    BanxicoMXNOTR(config=BanxicoMXNOTRConfig()).run(force_update=True)
 
     # ---- Fixings ----
     fixing_cfg = FixingRateConfig(
         rates=[
+            RateConfig(
+                rate_const="BANXICO_TARGET_RATE",
+                name=f"Banxico target rate {_C.get_value(name='BANXICO_TARGET_RATE')}",
+            ),
             RateConfig(
                 rate_const="REFERENCE_RATE__TIIE_OVERNIGHT",
                 name=f"Interbank Equilibrium Interest Rate (TIIE) {_C.get_value(name='REFERENCE_RATE__TIIE_OVERNIGHT')}",
@@ -110,7 +115,6 @@ def main() -> None:
     curve_cfg = CurveConfig(
         curve_const="ZERO_CURVE__BANXICO_M_BONOS_OTR",
         name="Discount Curve M Bonos Banxico Bootstrapped",
-        curve_points_dependency_node_uid=ON_THE_RUN_DATA_NODE_TABLE_NAME,
     )
     DiscountCurvesNode(curve_config=curve_cfg).run(force_update=True)
 

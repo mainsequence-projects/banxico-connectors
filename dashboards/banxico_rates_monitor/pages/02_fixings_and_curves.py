@@ -16,6 +16,7 @@ from dashboards.banxico_rates_monitor.common import (
     CURVES_TABLE_IDENTIFIER,
     FIXINGS_TABLE_IDENTIFIER,
     decode_curve_frame,
+    render_backend_status,
     default_start_date,
     fetch_table_df,
     latest_rows,
@@ -36,6 +37,9 @@ run_page(
 st.caption(
     "Inspect the MainSequence fixing-rates table and the Banxico zero-curve output built from the source node."
 )
+
+if render_backend_status():
+    st.stop()
 
 lookback_days = st.sidebar.select_slider(
     "Lookback window (days)",
@@ -131,7 +135,7 @@ else:
         )
         curve_fig.update_layout(
             xaxis_title="Days to maturity",
-            yaxis_title="Zero rate (%)",
+            yaxis_title="Zero rate (decimal)",
             legend_title="Curve date",
             margin=dict(l=20, r=20, t=60, b=20),
         )

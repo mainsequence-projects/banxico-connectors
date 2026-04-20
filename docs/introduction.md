@@ -1,17 +1,18 @@
 # Introduction
 
 `banxico-connectors` extends `mainsequence` with Banxico SIE market data for
-Mexican rates. It loads on-the-run government instruments and the Banxico
-target rate, stores them in a daily MainSequence DataNode, publishes TIIE and
-CETE fixings, and bootstraps an MXN zero curve that can be consumed by
-MainSequence pricing models and dashboards.
+Mexican rates. It stores on-the-run government-instrument quotes in a daily
+MainSequence DataNode, publishes Banxico target-rate, TIIE, and CETE fixings,
+and bootstraps an MXN zero curve that can be consumed by MainSequence pricing
+models and dashboards.
 
 ## What The Project Does
 
 - Pulls Banxico SIE series for CETES, M Bonos, Bondes D, Bondes F, Bondes G,
-  and the Banxico target rate.
+  and the Banxico target-rate fixing.
 - Registers Banxico-specific market assets and MainSequence constants.
-- Builds MainSequence fixing datasets for TIIE and CETE reference rates.
+- Builds MainSequence fixing datasets for Banxico target-rate, TIIE, and CETE
+  reference rates.
 - Builds a MainSequence discount curve from Banxico on-the-run instruments.
 - Includes a multipage Streamlit dashboard that reads the source, fixing, and
   curve tables through the MainSequence dashboard runtime.

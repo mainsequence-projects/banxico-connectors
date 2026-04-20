@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import datetime as dt
-import os
-from typing import Dict, List, Optional, Tuple, Union
+import math
+from typing import Dict, List, Tuple, Union
 
 import numpy as np
 import pandas as pd
 import pytz
 import mainsequence.client as msc
+from pydantic import Field
 
-from mainsequence.tdag import DataNode
-from mainsequence.client.models_tdag import UpdateStatistics, ColumnMetaData
+from mainsequence.tdag import DataNode, DataNodeConfiguration, DataNodeMetaData, RecordDefinition
+from mainsequence.client.models_tdag import UpdateStatistics
 
 from banxico_connectors.settings import (
     CETES_SERIES,
@@ -18,9 +19,8 @@ from banxico_connectors.settings import (
     BONDES_D_SERIES,
     BONDES_F_SERIES,
     BONDES_G_SERIES,
-    BANXICO_TARGET_RATE,
-    MONEY_MARKET_RATES,
     ON_THE_RUN_DATA_NODE_TABLE_NAME,
+    get_banxico_token,
 )
 from banxico_connectors.utils import fetch_banxico_series_batched, to_long
 
@@ -33,6 +33,94 @@ UTC = pytz.utc
 # -----------------------------
 
 
+class BanxicoMXNOTRConfig(DataNodeConfiguration):
+    offset_start: dt.datetime = Field(
+        default=dt.datetime(2010, 1, 1, tzinfo=UTC),
+        description="First-run fallback start date for Banxico OTR backfills.",
+        json_schema_extra={"update_only": True},
+    )
+    records: list[RecordDefinition] = Field(
+        default_factory=lambda: [
+            RecordDefinition(
+                column_name="days_to_maturity",
+                dtype="float64",
+                label="Days to Maturity",
+                description="Number of days until maturity (Banxico vector).",
+            ),
+            RecordDefinition(
+                column_name="clean_price",
+                dtype="float64",
+                label="Clean Price",
+                description="Price excluding accrued interest.",
+            ),
+            RecordDefinition(
+                column_name="dirty_price",
+                dtype="float64",
+                label="Dirty Price",
+                description="Dirty price for quoted securities.",
+            ),
+            RecordDefinition(
+                column_name="current_coupon",
+                dtype="float64",
+                label="Current Coupon",
+                description="Coupon or spread-like input reported by Banxico, depending on type.",
+            ),
+            RecordDefinition(
+                column_name="yield_rate",
+                dtype="float64",
+                label="Yield Rate",
+                description=(
+                    "Derived annual yield as a decimal rate when it can be calculated from "
+                    "the quoted price and maturity."
+                ),
+            ),
+            RecordDefinition(
+                column_name="yield_source",
+                dtype="string",
+                label="Yield Source",
+                description="Method used to derive yield_rate, or not_available when unavailable.",
+            ),
+            RecordDefinition(
+                column_name="type",
+                dtype="string",
+                label="Instrument Type",
+                description="Normalized instrument role used by the curve bootstrapper.",
+            ),
+            RecordDefinition(
+                column_name="instrument_family",
+                dtype="string",
+                label="Instrument Family",
+                description="Normalized Banxico family name for the row.",
+            ),
+            RecordDefinition(
+                column_name="quote_type",
+                dtype="string",
+                label="Quote Type",
+                description="Whether dirty_price should be interpreted as a price or a rate.",
+            ),
+            RecordDefinition(
+                column_name="coupon_type",
+                dtype="string",
+                label="Coupon Type",
+                description="Whether current_coupon is unused, a coupon, or a spread-like input.",
+            ),
+        ]
+    )
+    node_metadata: DataNodeMetaData = Field(
+        default_factory=lambda: DataNodeMetaData(
+            identifier=ON_THE_RUN_DATA_NODE_TABLE_NAME,
+            data_frequency_id=msc.DataFrequency.one_d,
+            description=(
+                "On-the-run CETES, BONOS, and BONDES D/F/G quotes from Banxico SIE. The dataset "
+                "stores security price observations with normalized type, family, quote_type, "
+                "coupon_type, yield_rate, and yield_source fields for plotting and downstream "
+                "curve construction."
+            ),
+        ),
+        json_schema_extra={"runtime_only": True},
+    )
+
+
 class BanxicoMXNOTR(DataNode):
     """
     Pull Banxico SIE observations for on-the-run Mexican rates instruments.
@@ -41,7 +129,7 @@ class BanxicoMXNOTR(DataNode):
         MultiIndex: (time_index [UTC], unique_identifier)
         Columns:
             days_to_maturity, clean_price, dirty_price, current_coupon,
-            type, instrument_family, quote_type, coupon_type
+            yield_rate, yield_source, type, instrument_family, quote_type, coupon_type
     """
 
     CETES_TENORS: Tuple[str, ...] = tuple(CETES_SERIES.keys())
@@ -65,12 +153,22 @@ class BanxicoMXNOTR(DataNode):
         "floating_bondes_d": "spread_like_rate",
         "floating_bondes_f": "spread_like_rate",
         "floating_bondes_g": "spread_like_rate",
-        "overnight_rate": "none",
     }
 
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(
+        self,
+        config: BanxicoMXNOTRConfig,
+        *,
+        hash_namespace: str | None = None,
+        test_node: bool = False,
+    ):
+        self.offset_start = config.offset_start
+        super().__init__(
+            config=config,
+            hash_namespace=hash_namespace,
+            test_node=test_node,
+        )
 
     @staticmethod
     def _assert_no_future_time_index(df: pd.DataFrame, max_allowed: dt.datetime) -> None:
@@ -94,6 +192,118 @@ class BanxicoMXNOTR(DataNode):
             "This usually means Banxico DD/MM/YYYY dates were parsed incorrectly or the source payload format changed."
         )
 
+    @staticmethod
+    def _normalize_multiindex_time_index(df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            return df
+        if not isinstance(df.index, pd.MultiIndex) or "time_index" not in df.index.names:
+            raise ValueError("BanxicoMXNOTR output must be indexed by time_index and unique_identifier.")
+
+        time_index = pd.DatetimeIndex(
+            pd.to_datetime(df.index.get_level_values("time_index"), utc=True)
+        ).astype("datetime64[ns, UTC]")
+        unique_identifier = df.index.get_level_values("unique_identifier")
+
+        normalized = df.copy()
+        normalized.index = pd.MultiIndex.from_arrays(
+            [time_index, unique_identifier],
+            names=["time_index", "unique_identifier"],
+        )
+        return normalized.sort_index()
+
+    @staticmethod
+    def _cetes_money_market_yield(dirty_price: float, days_to_maturity: float) -> float | None:
+        if pd.isna(dirty_price) or pd.isna(days_to_maturity):
+            return None
+        price = float(dirty_price)
+        days = float(days_to_maturity)
+        if price <= 0.0 or days <= 0.0:
+            return None
+        return (10.0 / price - 1.0) * (360.0 / days)
+
+    @staticmethod
+    def _fixed_bond_yield_from_dirty_price(
+        dirty_price: float,
+        days_to_maturity: float,
+        current_coupon: float,
+    ) -> float | None:
+        if pd.isna(dirty_price) or pd.isna(days_to_maturity) or pd.isna(current_coupon):
+            return None
+
+        price = float(dirty_price)
+        days = float(days_to_maturity)
+        coupon_rate = float(current_coupon) / 100.0
+        if price <= 0.0 or days <= 0.0 or coupon_rate < 0.0:
+            return None
+
+        face = 100.0
+        coupon_step_days = 182.0
+        payment_count = max(1, int(math.ceil(days / coupon_step_days)))
+        payment_days = [min(coupon_step_days * i, days) for i in range(1, payment_count + 1)]
+
+        cashflows: list[tuple[float, float]] = []
+        previous_day = 0.0
+        for payment_day in payment_days:
+            accrual_days = max(payment_day - previous_day, 0.0)
+            amount = face * coupon_rate * accrual_days / 360.0
+            if math.isclose(payment_day, days):
+                amount += face
+            cashflows.append((payment_day, amount))
+            previous_day = payment_day
+
+        def present_value(yield_rate: float) -> float:
+            base = 1.0 + yield_rate / 2.0
+            if base <= 0.0:
+                return float("inf")
+            return sum(
+                amount / (base ** (2.0 * payment_day / 360.0))
+                for payment_day, amount in cashflows
+            )
+
+        low = -0.95
+        high = 2.0
+        low_diff = present_value(low) - price
+        high_diff = present_value(high) - price
+        if low_diff * high_diff > 0:
+            return None
+
+        for _ in range(80):
+            mid = (low + high) / 2.0
+            mid_diff = present_value(mid) - price
+            if abs(mid_diff) < 1e-12:
+                return mid
+            if low_diff * mid_diff <= 0:
+                high = mid
+                high_diff = mid_diff
+            else:
+                low = mid
+                low_diff = mid_diff
+        return (low + high) / 2.0
+
+    @classmethod
+    def _derive_yield(cls, row: pd.Series) -> tuple[float | None, str]:
+        family = str(row.get("instrument_family", "")).lower()
+        instrument_type = str(row.get("type", "")).lower()
+
+        if family == "cetes" or instrument_type == "zero_coupon":
+            rate = cls._cetes_money_market_yield(
+                row.get("dirty_price"),
+                row.get("days_to_maturity"),
+            )
+            if rate is not None:
+                return rate, "cetes_money_market"
+
+        if family == "bonos" or instrument_type == "fixed_bond":
+            rate = cls._fixed_bond_yield_from_dirty_price(
+                row.get("dirty_price"),
+                row.get("days_to_maturity"),
+                row.get("current_coupon"),
+            )
+            if rate is not None:
+                return rate, "dirty_price_fixed_bond_ytm"
+
+        return None, "not_available"
+
     def dependencies(self) -> Dict[str, Union["DataNode", "APIDataNode"]]:
         return {}
 
@@ -110,7 +320,6 @@ class BanxicoMXNOTR(DataNode):
                 cetes_tickers
                 + bonos_tickers
                 +  bondes_d_tickers + bondes_f_tickers + bondes_g_tickers
-                + [BANXICO_TARGET_RATE]
         )
 
         assets_payload=[]
@@ -142,76 +351,37 @@ class BanxicoMXNOTR(DataNode):
 
         return assets
 
-    def get_column_metadata(self) -> List[ColumnMetaData]:
-        return [
-            ColumnMetaData(
-                column_name="days_to_maturity", dtype="float", label="Days to Maturity",
-                description="Number of days until maturity (Banxico vector)."
-            ),
-            ColumnMetaData(
-                column_name="clean_price", dtype="float", label="Clean Price",
-                description="Price excluding accrued interest."
-            ),
-            ColumnMetaData(
-                column_name="dirty_price", dtype="float", label="Dirty Price",
-                description=(
-                    "Dirty price for bond instruments; decimal overnight rate when "
-                    "type=overnight_rate."
-                )
-            ),
-            ColumnMetaData(
-                column_name="current_coupon", dtype="float", label="Current Coupon",
-                description="Coupon or spread-like input reported by Banxico, depending on type."
-            ),
-            ColumnMetaData(
-                column_name="type", dtype="str", label="Instrument Type",
-                description="Normalized instrument role used by the curve bootstrapper."
-            ),
-            ColumnMetaData(
-                column_name="instrument_family", dtype="str", label="Instrument Family",
-                description="Normalized Banxico family name for the row."
-            ),
-            ColumnMetaData(
-                column_name="quote_type", dtype="str", label="Quote Type",
-                description="Whether dirty_price should be interpreted as a price or a rate."
-            ),
-            ColumnMetaData(
-                column_name="coupon_type", dtype="str", label="Coupon Type",
-                description="Whether current_coupon is unused, a coupon, or a spread-like input."
-            ),
-        ]
-    def get_table_metadata(self) -> Optional[msc.TableMetaData]:
-        # Identifier + daily frequency + a concise description
-        return msc.TableMetaData(
-            identifier=ON_THE_RUN_DATA_NODE_TABLE_NAME,
-            data_frequency_id=msc.DataFrequency.one_d,
-            description=(
-                "On-the-run CETES, BONOS, BONDES D/F/G, and the Banxico target rate from Banxico "
-                "SIE. The dataset stores price/rate observations with normalized type, family, "
-                "quote_type, and coupon_type fields for downstream curve construction."
-            ),
-        )
-
     def update(self) -> pd.DataFrame:
         us: UpdateStatistics = self.update_statistics
 
-        # --- 0) Token from env (no params by design)
-        token = os.getenv("BANXICO_TOKEN")
-        if not token:
-            message = "BANXICO_TOKEN environment variable is required for Banxico SIE access."
-            self.logger.error(message)
-            raise RuntimeError(message)
+        # --- 0) Token from platform Secret (kept out of config/hash identity)
+        token = get_banxico_token()
 
         # --- 1) Compute update window (yesterday 00:00 UTC end). Start = min(last+1d)
         yday = dt.datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0) - dt.timedelta(days=1)
+        effective_assets = us.asset_list or self.get_asset_list() or []
+        effective_assets = [
+            asset
+            for asset in effective_assets
+            if (
+                (getattr(asset, "ticker", None) or getattr(asset, "unique_identifier", "") or "")
+                .startswith(("MCET_", "MBONO_", "BONDES_D_", "BONDES_F_", "BONDES_G_"))
+            )
+        ]
+        if not effective_assets:
+            return pd.DataFrame()
+
+        asset_time_statistics = us.asset_time_statistics or {}
         starts: List[dt.datetime] = []
-        for asset in us.asset_list:
-            last = us.get_last_update_index_2d(uid=asset.unique_identifier)
-            if last is not None:
+        for asset in effective_assets:
+            last = us.get_asset_earliest_multiindex_update(asset=asset)
+            if asset_time_statistics.get(asset.unique_identifier) and last is not None:
                 starts.append((last + dt.timedelta(days=1)).astimezone(UTC).replace(
                     hour=0, minute=0, second=0, microsecond=0
                 ))
-        start_dt = min(starts) if starts else dt.datetime(2010, 1, 1, tzinfo=UTC)
+            else:
+                starts.append(self.offset_start)
+        start_dt = min(starts) if starts else self.offset_start
         if start_dt > yday:
             return pd.DataFrame()
 
@@ -259,7 +429,7 @@ class BanxicoMXNOTR(DataNode):
                 )
                 for col in self.TARGET_COLS:
                     if col not in wide.columns:
-                        wide[col] = pd.NA
+                        wide[col] = np.nan
                 wide.index = pd.to_datetime(wide.index, utc=True)
                 wide.index.name = "time_index"
                 frames[(family_name, f"{tenor}_OTR")] = wide[list(self.TARGET_COLS)]
@@ -277,7 +447,7 @@ class BanxicoMXNOTR(DataNode):
 
         # --- 5) Attach each asset to its (family, tenor) frame
         out_parts: List[pd.DataFrame] = []
-        assets = us.asset_list or self.get_asset_list()
+        assets = effective_assets
         for a in assets:
             tkr = (a.ticker or "")
 
@@ -322,26 +492,15 @@ class BanxicoMXNOTR(DataNode):
         if not out_parts:
             return pd.DataFrame()
 
-        raw = fetch_banxico_series_batched([MONEY_MARKET_RATES[BANXICO_TARGET_RATE]], start_date=start_date, end_date=end_date, token=token)
-        long_df = to_long(raw, {BANXICO_TARGET_RATE:"dato"})  # produces columns: date, series_id, metric(EN), value
-        long_df["days_to_maturity"]=1
-        long_df["type"]="overnight_rate"
-        long_df["date"]=pd.to_datetime(long_df["date"],utc=True)
-        long_df=long_df.rename(columns={"date":"time_index","value":"dirty_price"})
-        inverse={v:k for k,v in MONEY_MARKET_RATES.items()}
-        long_df["unique_identifier"]=long_df["series_id"].map(inverse)
-        long_df=long_df.set_index(["time_index","unique_identifier"])
-        long_df["clean_price"]=None
-        long_df["dirty_price"] = long_df["dirty_price"]/100
-        long_df["current_coupon"] = None
-        long_df["instrument_family"] = "banxico_target_rate"
-        long_df["quote_type"] = "rate"
-        long_df["coupon_type"] = self.COUPON_TYPE_BY_SEC_TYPE["overnight_rate"]
-        out_parts.append(long_df[out_parts[0].columns])
         out = pd.concat(out_parts).sort_index()
-        out = out.replace(np.nan, None)
 
         out=out[out.days_to_maturity>0] #some banxico series have errors
+        if out.empty:
+            return pd.DataFrame()
+        yield_data = out.apply(self._derive_yield, axis=1, result_type="expand")
+        out["yield_rate"] = pd.to_numeric(yield_data[0], errors="coerce")
+        out["yield_source"] = yield_data[1].astype("string")
+        out = self._normalize_multiindex_time_index(out)
         self._assert_no_future_time_index(out, yday)
 
         return out

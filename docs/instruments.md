@@ -20,6 +20,7 @@ The connector registers these MainSequence builders:
 | MainSequence constant | Builder |
 | --- | --- |
 | `ZERO_CURVE__BANXICO_M_BONOS_OTR` | `build_banxico_mbonos_otr_zero_curve` |
+| `BANXICO_TARGET_RATE` | `update_banxico_target_rate` |
 | `REFERENCE_RATE__TIIE_OVERNIGHT` | `update_tiie_fixings` |
 | `REFERENCE_RATE__TIIE_28` | `update_tiie_fixings` |
 | `REFERENCE_RATE__TIIE_91` | `update_tiie_fixings` |
@@ -30,12 +31,12 @@ The connector registers these MainSequence builders:
 
 ## Instrument Types Used In The Curve Bootstrapper
 
-The Banxico source DataNode normalizes raw market data into instrument types that
-the bootstrapper understands:
+The Banxico quote DataNode and stored fixing datasets are combined into
+instrument types that the bootstrapper understands:
 
 | Type | Source family | Logic |
 | --- | --- | --- |
-| `overnight_rate` | Banxico target rate | One-day anchor; value is stored in `dirty_price` as a decimal rate |
+| `overnight_rate` | Stored `BANXICO_TARGET_RATE` fixing | One-day anchor; value is injected into `dirty_price` as a decimal rate during bootstrapping |
 | `zero_coupon` | CETES | Discount factor is derived directly from price using face value 10 |
 | `fixed_bond` | M Bonos | Semiannual 182-day coupon bond bootstrapped from dirty price |
 | `floating_bondes_d` | Bondes D | 28-day floating-rate note bootstrapped from overnight rate plus spread |
@@ -47,13 +48,14 @@ the bootstrapper understands:
 `bootstrap_from_curve_df()` builds a zero curve one `time_index` at a time.
 The key rules are:
 
-- The Banxico target rate anchors the one-day discount factor.
+- The stored `BANXICO_TARGET_RATE` fixing anchors the one-day discount factor.
 - CETES are treated as zero-coupon instruments.
 - M Bonos are treated as fixed-coupon bonds with 182-day coupon spacing.
 - Bondes D, F, and G are treated as 28-day floaters that use the overnight rate
   plus the observed spread or coupon field.
 - Discount factors between pillars are interpolated log-linearly.
-- Zero rates are returned as simple money-market rates on an Act/360 basis.
+- Zero rates are returned as simple money-market rates on an Act/360 basis in
+  decimal form.
 
 ## Fixing Mapping
 
@@ -61,6 +63,7 @@ Banxico fixing updaters map MainSequence identifiers to Banxico SIE series ids:
 
 - TIIE: overnight, 28d, 91d, 182d
 - CETE: 28d, 91d, 182d
+- Banxico target rate: one-day policy-rate anchor
 
 The updater fetches only the requested series, converts the Banxico percentage
 value into decimal form, and writes the result as a MainSequence fixing dataset.

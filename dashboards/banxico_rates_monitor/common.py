@@ -1,23 +1,49 @@
 """Shared data-access helpers for the Banxico rates monitor dashboard."""
 
 from __future__ import annotations
-
 from dataclasses import dataclass
+import os
 from typing import Any
 
 import pandas as pd
 import pytz
 import streamlit as st
-import mainsequence.client as msc
 
-from mainsequence.tdag import APIDataNode
-from mainsequence.instruments.interest_rates.etl.curve_codec import (
-    decompress_string_to_curve,
-)
 
-from banxico_connectors.settings import ON_THE_RUN_DATA_NODE_TABLE_NAME
+def _backend_auth_error() -> str | None:
+    if (
+        not os.getenv("MAINSEQUENCE_ACCESS_TOKEN")
+        and not os.getenv("MAINSEQUENCE_REFRESH_TOKEN")
+    ):
+        return "Authentication env is missing. Set MAINSEQUENCE_ACCESS_TOKEN / MAINSEQUENCE_REFRESH_TOKEN."
+    return None
+
+
+def _curve_decode_fallback(_value: Any) -> dict[str, float]:
+    return {}
+
+
+_MAINSEQUENCE_IMPORT_ERROR = _backend_auth_error()
+msc = None
+APIDataNode = None
+decompress_string_to_curve = _curve_decode_fallback
+
+if _MAINSEQUENCE_IMPORT_ERROR is None:
+    try:
+        from mainsequence.instruments.interest_rates.etl.curve_codec import (
+            decompress_string_to_curve as _decompress_string_to_curve,
+        )
+        import mainsequence.client as msc
+        from mainsequence.tdag import APIDataNode  # type: ignore[import]
+    except Exception as exc:
+        msc = None
+        APIDataNode = None
+        _MAINSEQUENCE_IMPORT_ERROR = f"{type(exc).__name__}: {exc}"
+    else:
+        decompress_string_to_curve = _decompress_string_to_curve
 
 UTC = pytz.UTC
+ON_THE_RUN_DATA_NODE_TABLE_NAME = "banxico_1d_otr_mxn"
 FIXINGS_TABLE_IDENTIFIER = "fixing_rates_1d"
 CURVES_TABLE_IDENTIFIER = "discount_curves"
 DEFAULT_LOOKBACK_DAYS = 180
@@ -36,6 +62,33 @@ class TableBinding:
     def available(self) -> bool:
         return self.storage is not None and self.node is not None and self.error is None
 
+
+def client_import_error() -> str | None:
+    """Return a user-facing reason for why the MainSequence client is unavailable."""
+    return _MAINSEQUENCE_IMPORT_ERROR
+
+
+def render_backend_status() -> bool:
+    """Render a clear backend error banner when MainSequence cannot be used."""
+    reason = client_import_error()
+    if reason is None:
+        return False
+    st.error("MainSequence backend is currently unavailable.")
+    st.caption(reason)
+    return True
+
+
+def _coerce_zero_rate_to_decimal(rate: Any) -> float:
+    """Handle legacy curve rows stored as percent (e.g. 7.5) by normalizing to decimal."""
+    if rate is None or pd.isna(rate):
+        return float("nan")
+    try:
+        value = float(rate)
+    except (TypeError, ValueError):
+        return float("nan")
+    return value / 100.0 if abs(value) > 2.0 else value
+
+
 def _utc_now() -> pd.Timestamp:
     return pd.Timestamp.now(tz=UTC)
 
@@ -51,6 +104,24 @@ def storage_data_source_id(storage: msc.DataNodeStorage) -> int:
 
 @st.cache_resource(show_spinner=False)
 def get_table_binding(identifier: str, title: str, description: str) -> TableBinding:
+    if client_import_error() is not None:
+        return TableBinding(
+            identifier=identifier,
+            title=title,
+            description=description,
+            storage=None,
+            node=None,
+            error=client_import_error(),
+        )
+    if msc is None or APIDataNode is None:
+        return TableBinding(
+            identifier=identifier,
+            title=title,
+            description=description,
+            storage=None,
+            node=None,
+            error="MainSequence runtime modules are not available in this environment.",
+        )
     try:
         storage = msc.DataNodeStorage.get(identifier=identifier)
         node = APIDataNode(
@@ -128,6 +199,8 @@ def normalize_frame(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     if isinstance(out.index, pd.MultiIndex):
         out = out.reset_index()
+    elif "time_index" in out.columns:
+        out = out.reset_index(drop=True)
     else:
         out = out.reset_index(names=["time_index"])
     if "time_index" in out.columns:
@@ -237,6 +310,8 @@ def source_metric_options(df: pd.DataFrame) -> list[str]:
 
 @st.cache_data(show_spinner=False, ttl=120)
 def fetch_assets(unique_identifiers: tuple[str, ...]) -> list[Any]:
+    if client_import_error() is not None or msc is None:
+        return []
     if not unique_identifiers:
         return []
     try:
@@ -280,7 +355,7 @@ def decode_curve_frame(df: pd.DataFrame) -> pd.DataFrame:
                     "time_index": getattr(row, "time_index"),
                     "unique_identifier": getattr(row, "unique_identifier"),
                     "days_to_maturity": float(tenor),
-                    "zero_rate": float(zero_rate),
+                    "zero_rate": _coerce_zero_rate_to_decimal(zero_rate),
                 }
             )
     if not rows:

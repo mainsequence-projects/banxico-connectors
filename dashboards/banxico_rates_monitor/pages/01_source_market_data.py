@@ -16,6 +16,7 @@ from dashboards.banxico_rates_monitor.common import (
     ON_THE_RUN_DATA_NODE_TABLE_NAME,
     build_asset_frame,
     default_start_date,
+    render_backend_status,
     enrich_source_frame,
     fetch_table_df,
     latest_rows,
@@ -35,6 +36,9 @@ run_page(
 st.caption(
     "Explore the on-the-run Banxico source table that feeds the fixing and curve ETL."
 )
+
+if render_backend_status():
+    st.stop()
 
 lookback_days = st.sidebar.select_slider(
     "Lookback window (days)",

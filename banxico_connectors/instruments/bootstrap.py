@@ -119,7 +119,7 @@ def bootstrap_from_curve_df(curve_df, day_count_convention: float = 360.0):
           * First coupon C1 uses realized TC_dev for accrued days and (r+s) for remaining days
           * Accrued (to convert clean->dirty) uses TC_dev (without spread)
 
-    Returns: DataFrame with ['days_to_maturity','zero_rate'] (money-market simple, Act/360, in PERCENT)
+    Returns: DataFrame with ['days_to_maturity','zero_rate'] (money-market simple, Act/360, in decimal)
     """
     df = curve_df.copy()
     df["tenor_days"]  = pd.to_numeric(df["tenor_days"], errors="coerce").astype(float)
@@ -314,7 +314,7 @@ def bootstrap_from_curve_df(curve_df, day_count_convention: float = 360.0):
     mask = tenors > 0
     T = tenors[mask]
     DF = dfs[mask]
-    zeros = ((1.0 / DF) - 1.0) * (day_count_convention / T) * 100.0
+    zeros = ((1.0 / DF) - 1.0) * (day_count_convention / T)
     out = pd.DataFrame({"days_to_maturity": T.astype(int), "zero_rate": zeros})
     return out.sort_values("days_to_maturity", kind="mergesort").reset_index(drop=True)
 

@@ -51,6 +51,7 @@ def register_etl_builders(*, override: bool = False) -> None:
     )
     from .rates_to_curves import (
         build_banxico_mbonos_otr_zero_curve,
+        update_banxico_target_rate,
         update_tiie_fixings,
         update_cete_fixing,
     )
@@ -78,6 +79,8 @@ def register_etl_builders(*, override: bool = False) -> None:
         "REFERENCE_RATE__CETE_182",
     ):
         _safe_register(FIXING_RATE_BUILDERS, k, update_cete_fixing, override=override)
+
+    _safe_register(FIXING_RATE_BUILDERS, "BANXICO_TARGET_RATE", update_banxico_target_rate, override=override)
 
 
 
