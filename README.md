@@ -12,8 +12,8 @@ models and dashboards.
 
 ## What The Project Does
 
-- Pulls Banxico SIE series for CETES, M Bonos, Bondes D, Bondes F, Bondes G,
-  and the Banxico target-rate fixing.
+- Pulls Banxico SIE series for CETES, M Bonos, UDIBONOS, Bondes D, Bondes F,
+  Bondes G, and the Banxico target-rate fixing.
 - Registers Banxico-specific market assets and MainSequence constants.
 - Builds MainSequence fixing datasets for Banxico target-rate, TIIE, and CETE
   reference rates.

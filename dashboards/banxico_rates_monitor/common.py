@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 from dataclasses import dataclass
+import datetime as dt
 import os
 from typing import Any
 
 import pandas as pd
 import pytz
 import streamlit as st
+
+from banxico_connectors.settings import (
+    BONDES_D_SERIES,
+    BONDES_F_SERIES,
+    BONDES_G_SERIES,
+    BONOS_SERIES,
+    CETES_SERIES,
+    UDIBONOS_SERIES,
+)
 
 
 def _backend_auth_error() -> str | None:
@@ -47,6 +57,31 @@ ON_THE_RUN_DATA_NODE_TABLE_NAME = "banxico_1d_otr_mxn"
 FIXINGS_TABLE_IDENTIFIER = "fixing_rates_1d"
 CURVES_TABLE_IDENTIFIER = "discount_curves"
 DEFAULT_LOOKBACK_DAYS = 180
+
+PROJECT_SOURCE_UNIQUE_IDENTIFIERS = (
+    [f"MCET_{tenor}_OTR" for tenor in CETES_SERIES]
+    + [f"MBONO_{tenor}_OTR" for tenor in BONOS_SERIES]
+    + [f"UDIBONO_{tenor}_OTR" for tenor in UDIBONOS_SERIES]
+    + [f"BONDES_D_{tenor}_OTR" for tenor in BONDES_D_SERIES]
+    + [f"BONDES_F_{tenor}_OTR" for tenor in BONDES_F_SERIES]
+    + [f"BONDES_G_{tenor}_OTR" for tenor in BONDES_G_SERIES]
+)
+PROJECT_FIXING_UNIQUE_IDENTIFIERS = [
+    "BANXICO_TARGET_RATE",
+    "TIIE_OVERNIGHT",
+    "TIIE_28",
+    "TIIE_91",
+    "TIIE_182",
+    "CETE_28",
+    "CETE_91",
+    "CETE_182",
+]
+PROJECT_CURVE_UNIQUE_IDENTIFIERS = ["BANXICO_M_BONOS_OTR"]
+PROJECT_TABLE_UNIQUE_IDENTIFIERS = {
+    "source": PROJECT_SOURCE_UNIQUE_IDENTIFIERS,
+    "fixings": PROJECT_FIXING_UNIQUE_IDENTIFIERS,
+    "curves": PROJECT_CURVE_UNIQUE_IDENTIFIERS,
+}
 
 
 @dataclass(frozen=True)
@@ -100,6 +135,54 @@ def default_start_date(days: int = DEFAULT_LOOKBACK_DAYS) -> pd.Timestamp:
 def storage_data_source_id(storage: msc.DataNodeStorage) -> int:
     data_source = storage.data_source
     return data_source.id if hasattr(data_source, "id") else int(data_source)
+
+
+def delete_table_tail(
+    storage: Any,
+    *,
+    after_date: str | dt.datetime,
+    unique_identifier_list: list[str],
+    timeout: int | None = 120,
+) -> dict[str, Any]:
+    """
+    Delete rows at or after a cutoff using the SDK method when available.
+
+    Some long-running Streamlit processes may hold an older imported
+    DataNodeStorage class even after the SDK on disk has been upgraded. The
+    fallback calls the same backend endpoint used by
+    DataNodeStorage.delete_after_date().
+    """
+    if hasattr(storage, "delete_after_date"):
+        return storage.delete_after_date(
+            after_date,
+            unique_identifier_list=unique_identifier_list,
+            timeout=timeout,
+        )
+
+    if getattr(storage, "id", None) is None:
+        raise ValueError("DataNodeStorage must have an id before deleting rows after a date.")
+
+    from mainsequence.client.utils import make_request
+
+    storage_cls = type(storage)
+    payload_body: dict[str, Any] = {
+        "after_date": after_date.isoformat() if isinstance(after_date, dt.datetime) else after_date,
+        "unique_identifier_list": unique_identifier_list,
+    }
+    url = f"{storage_cls.get_object_url()}/{storage.id}/delete_after_date/"
+    response = make_request(
+        s=storage_cls.build_session(),
+        loaders=storage_cls.LOADERS,
+        r_type="POST",
+        url=url,
+        payload={"json": payload_body},
+        time_out=timeout,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(
+            f"Tail delete request failed with HTTP {response.status_code}: {response.text}"
+        )
+    return response.json()
 
 
 @st.cache_resource(show_spinner=False)

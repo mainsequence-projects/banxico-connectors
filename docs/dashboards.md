@@ -29,13 +29,28 @@ The current pages are:
 - `app.py`: landing page with table availability and source snapshot
 - `pages/01_source_market_data.py`: source-node explorer
 - `pages/02_fixings_and_curves.py`: fixings and zero-curve monitor
-- `pages/03_platform_health.py`: table bindings, metadata, and deployment-health view
+- `pages/03_platform_health.py`: table bindings, metadata, deployment-health view,
+  and a guarded backend tail-delete control
 
 The dashboard still remains operational rather than analytical:
 
 - it does not price portfolios
 - it does not build portfolio views
 - it does not create asset translation tables or other market-side application objects
+
+## Platform Health Tail Delete
+
+The Platform Health page includes a destructive maintenance control below table
+availability. It calls `DataNodeStorage.delete_after_date(...)`, which deletes
+rows at or after the selected date.
+
+The control is intentionally scoped:
+
+- table choices are limited to `banxico_1d_otr_mxn`, `fixing_rates_1d`, and
+  `discount_curves`
+- unique-identifier choices are static project-owned identifiers, not every
+  identifier found in the backend table
+- the user must explicitly confirm before the delete request is submitted
 
 ## Package Contract
 

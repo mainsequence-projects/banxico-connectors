@@ -38,22 +38,26 @@ instrument types that the bootstrapper understands:
 | --- | --- | --- |
 | `overnight_rate` | Stored `BANXICO_TARGET_RATE` fixing | One-day anchor; value is injected into `dirty_price` as a decimal rate during bootstrapping |
 | `zero_coupon` | CETES | Discount factor is derived directly from price using face value 10 |
-| `fixed_bond` | M Bonos | Semiannual 182-day coupon bond bootstrapped from dirty price |
-| `floating_bondes_d` | Bondes D | 28-day floating-rate note bootstrapped from overnight rate plus spread |
-| `floating_bondes_f` | Bondes F | 28-day floating-rate note bootstrapped from overnight rate plus spread |
-| `floating_bondes_g` | Bondes G | 28-day floating-rate note bootstrapped from overnight rate plus spread |
+| `fixed_bond` | M Bonos | Semiannual 182-day coupon bond bootstrapped from clean price |
+
+UDIBONOS are stored in the OTR quote DataNode with `type=inflation_linked_bond`.
+They are not passed into the nominal MXN M Bonos curve bootstrap.
+BONDES are also stored in the OTR quote DataNode but excluded from this nominal
+curve until a proper floating-rate note helper path is implemented.
 
 ## Bootstrap Logic
 
-`bootstrap_from_curve_df()` builds a zero curve one `time_index` at a time.
+`bootstrap_from_curve_df()` builds a zero curve one `time_index` at a time using
+QuantLib. CETES and MBONOS are built through the Banxico QuantLib instrument
+factory in `banxico_connectors/instruments/quantlib_factories.py`.
 The key rules are:
 
 - The stored `BANXICO_TARGET_RATE` fixing anchors the one-day discount factor.
 - CETES are treated as zero-coupon instruments.
-- M Bonos are treated as fixed-coupon bonds with 182-day coupon spacing.
-- Bondes D, F, and G are treated as 28-day floaters that use the overnight rate
-  plus the observed spread or coupon field.
-- Discount factors between pillars are interpolated log-linearly.
+- M Bonos are treated as fixed-coupon bonds with 182-day coupon spacing and clean-price helpers.
+- Bondes D, F, and G are excluded from the nominal curve.
+- UDIBONOS are excluded from the nominal curve because they are inflation-linked.
+- Discount factors between pillars use QuantLib `PiecewiseLogLinearDiscount`.
 - Zero rates are returned as simple money-market rates on an Act/360 basis in
   decimal form.
 

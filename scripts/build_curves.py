@@ -20,15 +20,10 @@ from banxico_connectors.instruments.registry import register_all
 register_all()
 
 # 4) Now import ETL nodes/configs (they rely on the registries above)
-from mainsequence.instruments.interest_rates.etl.nodes import (
-    CurveConfig,
-    DiscountCurvesNode,
-    FixingRateConfig,
-    FixingRatesNode,
-    RateConfig,
-)
+from mainsequence.instruments.interest_rates.etl.nodes import CurveConfig, DiscountCurvesNode, FixingRatesNode
 
 from banxico_connectors.data_nodes.banxico_mx_otr import BanxicoMXNOTR, BanxicoMXNOTRConfig
+from banxico_connectors.instruments.configs import build_banxico_fixing_rate_config
 from banxico_connectors.settings import ON_THE_RUN_DATA_NODE_TABLE_NAME
 
 
@@ -73,43 +68,7 @@ def main() -> None:
     BanxicoMXNOTR(config=BanxicoMXNOTRConfig()).run(force_update=True)
 
     # ---- Fixings ----
-    fixing_cfg = FixingRateConfig(
-        rates=[
-            RateConfig(
-                rate_const="BANXICO_TARGET_RATE",
-                name=f"Banxico target rate {_C.get_value(name='BANXICO_TARGET_RATE')}",
-            ),
-            RateConfig(
-                rate_const="REFERENCE_RATE__TIIE_OVERNIGHT",
-                name=f"Interbank Equilibrium Interest Rate (TIIE) {_C.get_value(name='REFERENCE_RATE__TIIE_OVERNIGHT')}",
-            ),
-            RateConfig(
-                rate_const="REFERENCE_RATE__TIIE_28",
-                name=f"Interbank Equilibrium Interest Rate (TIIE) {_C.get_value(name='REFERENCE_RATE__TIIE_28')}",
-            ),
-            RateConfig(
-                rate_const="REFERENCE_RATE__TIIE_91",
-                name=f"Interbank Equilibrium Interest Rate (TIIE) {_C.get_value(name='REFERENCE_RATE__TIIE_91')}",
-            ),
-            RateConfig(
-                rate_const="REFERENCE_RATE__TIIE_182",
-                name=f"Interbank Equilibrium Interest Rate (TIIE) {_C.get_value(name='REFERENCE_RATE__TIIE_182')}",
-            ),
-            RateConfig(
-                rate_const="REFERENCE_RATE__CETE_28",
-                name=f"CETE 28 days {_C.get_value(name='REFERENCE_RATE__CETE_28')}",
-            ),
-            RateConfig(
-                rate_const="REFERENCE_RATE__CETE_91",
-                name=f"CETE 91 days {_C.get_value(name='REFERENCE_RATE__CETE_91')}",
-            ),
-            RateConfig(
-                rate_const="REFERENCE_RATE__CETE_182",
-                name=f"CETE 182 days {_C.get_value(name='REFERENCE_RATE__CETE_182')}",
-            ),
-        ]
-    )
-    FixingRatesNode(rates_config=fixing_cfg).run(force_update=True)
+    FixingRatesNode(rates_config=build_banxico_fixing_rate_config()).run(force_update=True)
 
     # ---- Discount curve ----
     curve_cfg = CurveConfig(

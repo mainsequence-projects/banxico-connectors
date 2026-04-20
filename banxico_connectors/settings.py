@@ -50,6 +50,14 @@ BONOS_SERIES: Dict[str, Dict[str, str]] = {
     "20-30y": {"plazo": "SF60720", "precio_limpio": "SF60721", "precio_sucio": "SF60722", "cupon_vigente": "SF60723"},
 }
 
+UDIBONOS_SERIES: Dict[str, Dict[str, str]] = {
+    # UDIBONOS from Banxico CF300 vector. Prices are reported in pesos for UDI-linked bonds.
+    "3y":  {"plazo": "SF61784", "precio_limpio": "SF61785", "precio_sucio": "SF61786", "cupon_vigente": "SF61787"},
+    "10y": {"plazo": "SF45432", "precio_limpio": "SF45458", "precio_sucio": "SF45459", "cupon_vigente": "SF45480"},
+    "20y": {"plazo": "SF50761", "precio_limpio": "SF50765", "precio_sucio": "SF50766", "cupon_vigente": "SF50763"},
+    "30y": {"plazo": "SF50762", "precio_limpio": "SF50767", "precio_sucio": "SF50768", "cupon_vigente": "SF50764"},
+}
+
 BONDES_182_SERIES: Dict[str, Dict[str, str]] = {
     "182d": {
         "plazo": "SF45426",

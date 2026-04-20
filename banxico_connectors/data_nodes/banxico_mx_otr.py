@@ -16,6 +16,7 @@ from mainsequence.client.models_tdag import UpdateStatistics
 from banxico_connectors.settings import (
     CETES_SERIES,
     BONOS_SERIES,
+    UDIBONOS_SERIES,
     BONDES_D_SERIES,
     BONDES_F_SERIES,
     BONDES_G_SERIES,
@@ -111,10 +112,10 @@ class BanxicoMXNOTRConfig(DataNodeConfiguration):
             identifier=ON_THE_RUN_DATA_NODE_TABLE_NAME,
             data_frequency_id=msc.DataFrequency.one_d,
             description=(
-                "On-the-run CETES, BONOS, and BONDES D/F/G quotes from Banxico SIE. The dataset "
-                "stores security price observations with normalized type, family, quote_type, "
-                "coupon_type, yield_rate, and yield_source fields for plotting and downstream "
-                "curve construction."
+                "On-the-run CETES, BONOS, UDIBONOS, and BONDES D/F/G quotes from Banxico SIE. "
+                "The dataset stores security price observations with normalized type, family, "
+                "quote_type, coupon_type, yield_rate, and yield_source fields for plotting and "
+                "downstream curve construction."
             ),
         ),
         json_schema_extra={"runtime_only": True},
@@ -134,6 +135,7 @@ class BanxicoMXNOTR(DataNode):
 
     CETES_TENORS: Tuple[str, ...] = tuple(CETES_SERIES.keys())
     BONOS_TENORS: Tuple[str, ...] = tuple(BONOS_SERIES.keys())
+    UDIBONOS_TENORS: Tuple[str, ...] = tuple(UDIBONOS_SERIES.keys())
 
     # BONDES_182_TENORS: Tuple[str, ...] = tuple(BONDES_182_SERIES.keys())  # ("182d",)
     BONDES_D_TENORS: Tuple[str, ...] = tuple(BONDES_D_SERIES.keys())  # ("1y","2y","3y","5y")
@@ -150,6 +152,7 @@ class BanxicoMXNOTR(DataNode):
     COUPON_TYPE_BY_SEC_TYPE = {
         "zero_coupon": "none",
         "fixed_bond": "coupon",
+        "inflation_linked_bond": "coupon",
         "floating_bondes_d": "spread_like_rate",
         "floating_bondes_f": "spread_like_rate",
         "floating_bondes_g": "spread_like_rate",
@@ -311,6 +314,7 @@ class BanxicoMXNOTR(DataNode):
     def get_asset_list(self) -> List[msc.Asset]:
         cetes_tickers = [f"MCET_{t}_OTR" for t in self.CETES_TENORS]
         bonos_tickers = [f"MBONO_{t}_OTR" for t in self.BONOS_TENORS]
+        udibonos_tickers = [f"UDIBONO_{t}_OTR" for t in self.UDIBONOS_TENORS]
 
         bondes_d_tickers = [f"BONDES_D_{t}_OTR" for t in self.BONDES_D_TENORS]
         bondes_f_tickers = [f"BONDES_F_{t}_OTR" for t in self.BONDES_F_TENORS]
@@ -319,6 +323,7 @@ class BanxicoMXNOTR(DataNode):
         wanted = (
                 cetes_tickers
                 + bonos_tickers
+                + udibonos_tickers
                 +  bondes_d_tickers + bondes_f_tickers + bondes_g_tickers
         )
 
@@ -365,7 +370,7 @@ class BanxicoMXNOTR(DataNode):
             for asset in effective_assets
             if (
                 (getattr(asset, "ticker", None) or getattr(asset, "unique_identifier", "") or "")
-                .startswith(("MCET_", "MBONO_", "BONDES_D_", "BONDES_F_", "BONDES_G_"))
+                .startswith(("MCET_", "MBONO_", "UDIBONO_", "BONDES_D_", "BONDES_F_", "BONDES_G_"))
             )
         ]
         if not effective_assets:
@@ -436,6 +441,7 @@ class BanxicoMXNOTR(DataNode):
         # CETES / BONOS
         pivot_family("Cetes", CETES_SERIES)
         pivot_family("Bonos", BONOS_SERIES)
+        pivot_family("Udibonos", UDIBONOS_SERIES)
 
         # NEW: BONDES (182 / D / F / G)
         pivot_family("Bondes_D", BONDES_D_SERIES)
@@ -458,6 +464,10 @@ class BanxicoMXNOTR(DataNode):
             elif tkr.startswith("MBONO_"):
                 family, tenor = "Bonos", tkr.split("MBONO_", 1)[1]
                 sec_type = "fixed_bond"
+
+            elif tkr.startswith("UDIBONO_"):
+                family, tenor = "Udibonos", tkr.split("UDIBONO_", 1)[1]
+                sec_type = "inflation_linked_bond"
 
             #  Bondes families
 

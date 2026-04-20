@@ -50,21 +50,13 @@ def _read_banxico_target_rate_fixing_series(start_date, end_date) -> pd.Series:
     if start_ts > end_ts:
         return pd.Series(dtype="float64")
 
-    from mainsequence.instruments.interest_rates.etl.nodes import (
-        FixingRateConfig,
-        FixingRatesNode,
-        RateConfig,
-    )
+    from mainsequence.instruments.interest_rates.etl.nodes import FixingRatesNode
 
-    fixing_cfg = FixingRateConfig(
-        rates=[
-            RateConfig(
-                rate_const=BANXICO_TARGET_RATE,
-                name="Banxico target rate",
-            )
-        ]
-    )
-    fixing_node = FixingRatesNode(rates_config=fixing_cfg)
+    from banxico_connectors.instruments.configs import build_banxico_fixing_rate_config
+
+    fixing_node = FixingRatesNode(rates_config=build_banxico_fixing_rate_config())
+    if fixing_node.data_node_update is None:
+        fixing_node.run(force_update=True)
     lookback_start = start_ts - pd.Timedelta(days=370)
     fixings = fixing_node.get_df_between_dates(
         start_date=lookback_start.to_pydatetime(),
@@ -129,13 +121,13 @@ def boostrap_mbono_curve(update_statistics, curve_unique_identifier: str, base_n
       2) Bootstraps the zero curve using:
          - overnight_rate (Banxico target) as a 1-day anchor,
          - zero_coupon (Cetes, face = 10),
-         - fixed_bond (Mbonos, 182-day coupons, uses dirty price).
+         - fixed_bond (Mbonos, 182-day coupons, uses clean price).
       3) Returns ONE dataframe with columns:
            time_index, days_to_maturity, zero_rate
 
     Assumptions:
       - Money-market simple yield Act/360 (consistent with your IRS code).
-      - MBono coupon schedule approximated as exact 182-day spacing from spot; accrued handled via dirty price.
+      - MBono coupon schedule is built in QuantLib with 182-day coupon spacing.
       - Required columns in input frame: ['time_index','type','tenor_days','clean_price','dirty_price','coupon'].
         For overnight rows, use 'dirty_price' to carry the annual rate (e.g. 0.0725).
     """
@@ -172,6 +164,15 @@ def boostrap_mbono_curve(update_statistics, curve_unique_identifier: str, base_n
         if target_rate is None:
             continue
         curve_df = _append_overnight_anchor(curve_df.copy(), time_index, target_rate)
+        curve_df = curve_df[
+            curve_df["type"].isin(
+                {
+                    "overnight_rate",
+                    "zero_coupon",
+                    "fixed_bond",
+                }
+            )
+        ]
 
         if curve_df.shape[0] < 5:
             continue

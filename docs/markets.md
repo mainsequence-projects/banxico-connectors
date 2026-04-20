@@ -23,6 +23,7 @@ The asset universe follows these identifier patterns:
 | --- | --- |
 | `MCET_<tenor>_OTR` | CETES on-the-run buckets |
 | `MBONO_<bucket>_OTR` | M Bonos on-the-run buckets |
+| `UDIBONO_<tenor>_OTR` | UDIBONOS on-the-run buckets |
 | `BONDES_D_<tenor>_OTR` | Bondes D on-the-run buckets |
 | `BONDES_F_<tenor>_OTR` | Bondes F on-the-run buckets |
 | `BONDES_G_<tenor>_OTR` | Bondes G on-the-run buckets |

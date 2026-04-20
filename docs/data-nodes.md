@@ -49,13 +49,14 @@ The normalized `type` values are:
 
 - `zero_coupon` for CETES
 - `fixed_bond` for M Bonos
+- `inflation_linked_bond` for UDIBONOS
 - `floating_bondes_d` for Bondes D
 - `floating_bondes_f` for Bondes F
 - `floating_bondes_g` for Bondes G
 
 The helper semantic fields are:
 
-- `instrument_family`: `cetes`, `bonos`, `bondes_d`, `bondes_f`, or `bondes_g`
+- `instrument_family`: `cetes`, `bonos`, `udibonos`, `bondes_d`, `bondes_f`, or `bondes_g`
 - `quote_type`: `price`
 - `coupon_type`: `none`, `coupon`, or `spread_like_rate`
 
@@ -65,6 +66,7 @@ The node fetches Banxico series for these groups:
 
 - CETES: `28d`, `91d`, `182d`, `364d`, `2y`
 - M Bonos: `0-3y`, `3-5y`, `5-7y`, `7-10y`, `10-20y`, `20-30y`
+- UDIBONOS: `3y`, `10y`, `20y`, `30y`
 - Bondes D: `1y`, `2y`, `3y`, `5y`
 - Bondes F: `1y`, `2y`, `3y`, `5y`, `7y`
 - Bondes G: `2y`, `4y`, `6y`, `8y`, `10y`
@@ -72,6 +74,10 @@ The node fetches Banxico series for these groups:
 The Banxico target rate is intentionally not stored in this source quote node.
 It is persisted through the `fixing_rates_1d` fixing storage and consumed by the
 curve builder as the one-day anchor.
+
+UDIBONOS are stored for quote monitoring and plotting. They are intentionally
+excluded from the nominal MXN M Bonos zero-curve bootstrap because they are
+inflation-linked securities.
 
 ## Update Behavior
 

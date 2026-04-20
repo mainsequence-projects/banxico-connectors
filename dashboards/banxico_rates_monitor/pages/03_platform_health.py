@@ -16,8 +16,10 @@ from dashboards.banxico_rates_monitor.common import (
     CURVES_TABLE_IDENTIFIER,
     FIXINGS_TABLE_IDENTIFIER,
     ON_THE_RUN_DATA_NODE_TABLE_NAME,
+    PROJECT_TABLE_UNIQUE_IDENTIFIERS,
     availability_summary,
     default_start_date,
+    delete_table_tail,
     enrich_source_frame,
     fetch_table_df,
     get_bindings,
@@ -83,6 +85,80 @@ for key, raw_df, df, future_df in [
 
 st.markdown("### Table Availability")
 st.dataframe(pd.DataFrame(table_rows), width="stretch", hide_index=True)
+
+st.markdown("### Delete Table Tail")
+st.caption(
+    "Deletes rows at or after the selected date. Scope is restricted to Banxico identifiers built by this project."
+)
+delete_result = st.session_state.pop("platform_health_tail_delete_result", None)
+if delete_result is not None:
+    st.success("Tail delete completed.")
+    st.json(delete_result, expanded=False)
+
+delete_table_key = st.selectbox(
+    "Table",
+    options=list(bindings.keys()),
+    format_func=lambda key: bindings[key].title,
+    key="tail_delete_table_key",
+)
+delete_binding = bindings[delete_table_key]
+delete_identifier_options = list(PROJECT_TABLE_UNIQUE_IDENTIFIERS[delete_table_key])
+
+with st.form("delete_table_tail_form"):
+    if len(delete_identifier_options) == 1:
+        selected_identifiers = delete_identifier_options
+        st.text_input(
+            "Unique identifier",
+            value=delete_identifier_options[0],
+            disabled=True,
+            help="Only this project-owned identifier exists for the selected table.",
+        )
+    else:
+        selected_identifiers = st.multiselect(
+            "Unique identifiers",
+            options=delete_identifier_options,
+            help="Only identifiers produced by this Banxico project are available here.",
+        )
+    delete_after_date = st.date_input(
+        "Delete rows at or after date",
+        value=pd.Timestamp.utcnow().date(),
+        help="Inclusive cutoff. All later rows for the selected identifiers are deleted.",
+    )
+    confirm_delete = st.checkbox(
+        "Required: I understand this deletes the selected table tail from the backend.",
+    )
+    submitted_delete = st.form_submit_button(
+        "Delete selected tail",
+        disabled=delete_binding.storage is None,
+    )
+
+if submitted_delete:
+    if delete_binding.storage is None:
+        st.error(f"No storage metadata is available for `{delete_binding.identifier}`.")
+    elif not selected_identifiers:
+        st.error("Select at least one project-owned unique identifier.")
+    elif not confirm_delete:
+        st.error("Confirm the backend delete before submitting.")
+    else:
+        cutoff = pd.Timestamp(delete_after_date, tz="UTC").to_pydatetime()
+        try:
+            result = delete_table_tail(
+                delete_binding.storage,
+                after_date=cutoff,
+                unique_identifier_list=selected_identifiers,
+                timeout=120,
+            )
+        except Exception as exc:
+            st.error(f"Tail delete failed: {type(exc).__name__}: {exc}")
+        else:
+            fetch_table_df.clear()
+            st.session_state["platform_health_tail_delete_result"] = {
+                "table": delete_binding.identifier,
+                "cutoff": cutoff.isoformat(),
+                "unique_identifier_list": selected_identifiers,
+                "backend_result": result,
+            }
+            st.rerun()
 
 for binding in bindings.values():
     render_binding_alert(binding)
